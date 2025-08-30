@@ -91,6 +91,14 @@ jobs:
         working-directory: terraform/environments/${{ steps.env.outputs.environment }}
         run: |
           cat > terraform.tfvars << EOF
+          # OCI Provider Configuration
+          tenancy_ocid       = "${{ secrets.OCI_CLI_TENANCY }}"
+          user_ocid          = "${{ secrets.OCI_CLI_USER }}"
+          fingerprint        = "${{ secrets.OCI_CLI_FINGERPRINT }}"
+          private_key_path   = "~/.oci/oci_api_key.pem"
+          region             = "${{ secrets.OCI_CLI_REGION }}"
+          
+          # Infrastructure Configuration
           compartment_id      = "${{ secrets.OCI_COMPARTMENT_ID }}"
           availability_domain = "${{ secrets.OCI_AVAILABILITY_DOMAIN }}"
           subnet_id          = "${{ secrets.OCI_PRIVATE_SUBNET }}"

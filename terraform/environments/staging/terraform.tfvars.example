@@ -1,6 +1,13 @@
 # Copy this to terraform.tfvars and fill in your values
 
-# OCI Configuration
+# OCI Provider Configuration
+tenancy_ocid       = "ocid1.tenancy.oc1..aaaaaaaa..."
+user_ocid          = "ocid1.user.oc1..aaaaaaaa..."
+fingerprint        = "12:34:56:78:90:ab:cd:ef:12:34:56:78:90:ab:cd:ef"
+private_key_path   = "~/.oci/oci_api_key.pem"
+region             = "us-ashburn-1"
+
+# Infrastructure Configuration
 compartment_id      = "ocid1.compartment.oc1..aaaaaaaa..."
 availability_domain = "AD-1"
 subnet_id          = "ocid1.subnet.oc1.iad.aaaaaaaa..."

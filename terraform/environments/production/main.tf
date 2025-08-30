@@ -26,9 +26,13 @@ terraform {
 
 # Provider configuration
 provider "oci" {
-  # Configuration comes from environment variables set by GitHub Actions
+  # Use environment variables for authentication
   auth                = "APIKey"
-  config_file_profile = "DEFAULT"
+  tenancy_ocid        = var.tenancy_ocid
+  user_ocid           = var.user_ocid  
+  fingerprint         = var.fingerprint
+  private_key_path    = var.private_key_path
+  region              = var.region
 }
 
 # Data sources for existing OCI resources
