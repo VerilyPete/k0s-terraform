@@ -1,0 +1,129 @@
+name: 'Terraform Apply'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      destroy:
+        description: 'Destroy infrastructure instead of apply'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: '1.6.0'
+  OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+  OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+
+jobs:
+  terraform-apply:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup OCI CLI
+        uses: oracle-actions/configure-oci-cli@v1.3.2
+        with:
+          user: ${{ secrets.OCI_CLI_USER }}
+          tenancy: ${{ secrets.OCI_CLI_TENANCY }}
+          fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          key_content: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          region: ${{ secrets.OCI_CLI_REGION }}
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create terraform.tfvars
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: |
+          cat > terraform.tfvars << EOF
+          compartment_id      = "${{ secrets.OCI_COMPARTMENT_ID }}"
+          availability_domain = "${{ secrets.OCI_AVAILABILITY_DOMAIN }}"
+          subnet_id          = "${{ secrets.OCI_PRIVATE_SUBNET }}"
+          image_id           = "${{ secrets.OCI_CUSTOM_IMAGE }}"
+          ssh_public_key     = "${{ secrets.SSH_PUBLIC_KEY }}"
+          tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
+          EOF
+
+      - name: Terraform Init
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: terraform init
+
+      - name: Terraform Apply
+        if: github.event.inputs.destroy != 'true'
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        id: apply
+        run: |
+          terraform apply -auto-approve
+          terraform output -json > outputs.json
+
+      - name: Terraform Destroy
+        if: github.event.inputs.destroy == 'true'
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: terraform destroy -auto-approve
+
+      - name: Parse Terraform Outputs
+        if: github.event.inputs.destroy != 'true'
+        id: outputs
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: |
+          CONTROLLER_IP=$(jq -r '.cluster_info.value.controller.private_ip' outputs.json)
+          CONTROLLER_HOSTNAME=$(jq -r '.cluster_info.value.controller.hostname' outputs.json)
+          
+          echo "controller_ip=$CONTROLLER_IP" >> $GITHUB_OUTPUT
+          echo "controller_hostname=$CONTROLLER_HOSTNAME" >> $GITHUB_OUTPUT
+          echo "environment=${{ steps.env.outputs.environment }}" >> $GITHUB_OUTPUT
+
+      - name: Trigger K8s Deployment
+        if: github.event.inputs.destroy != 'true'
+        uses: ./.github/workflows/k8s-deploy.yml
+        with:
+          environment: ${{ steps.env.outputs.environment }}
+          controller_ip: ${{ steps.outputs.outputs.controller_ip }}
+          controller_hostname: ${{ steps.outputs.outputs.controller_hostname }}
+
+      - name: Deployment Summary
+        if: github.event.inputs.destroy != 'true'
+        run: |
+          echo "============================================="
+          echo "Terraform Apply Complete - ${{ steps.env.outputs.environment }}"
+          echo "============================================="
+          echo ""
+          echo "Controller: ${{ steps.outputs.outputs.controller_hostname }}"
+          echo "Private IP: ${{ steps.outputs.outputs.controller_ip }}"
+          echo ""
+          echo "Next: K8s cluster setup and application deployment"
+          echo "============================================="

@@ -1,0 +1,313 @@
+name: 'K8s Cluster Setup and App Deployment'
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      controller_ip:
+        required: true
+        type: string
+      controller_hostname:
+        required: true
+        type: string
+    outputs:
+      deployment_status:
+        description: "Deployment completion status"
+        value: ${{ jobs.k8s-deployment.outputs.status }}
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_cluster_setup:
+        description: 'Skip cluster setup (deploy apps only)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+  OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+
+jobs:
+  k8s-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      status: ${{ steps.deployment_status.outputs.status }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup connectivity
+        uses: ./.github/actions/setup-connectivity
+        with:
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          tailscale_auth_key: ${{ secrets.PRIVATE_TAILSCALE_KEY }}
+
+      - name: Wait for nodes to be accessible
+        run: |
+          echo "Waiting for cluster nodes to be accessible via Tailscale..."
+          
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          
+          for node in k8s-controller-$ENVIRONMENT k8s-worker-1-$ENVIRONMENT k8s-worker-2-$ENVIRONMENT; do
+            echo "Checking $node..."
+            for i in {1..30}; do
+              if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no opc@$node "echo 'Node ready'" >/dev/null 2>&1; then
+                echo "✅ $node is accessible"
+                break
+              fi
+              
+              if [ $i -eq 30 ]; then
+                echo "❌ Failed to connect to $node after 30 attempts"
+                exit 1
+              fi
+              
+              echo "  Attempt $i/30 - waiting 10s..."
+              sleep 10
+            done
+          done
+
+      - name: Setup K8s cluster
+        if: github.event.inputs.skip_cluster_setup != 'true'
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          
+          echo "Setting up K8s cluster on $CONTROLLER..."
+          
+          # Wait for controller to be fully ready
+          echo "Waiting for k0s controller to be ready..."
+          for i in {1..24}; do
+            if ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes" >/dev/null 2>&1; then
+              echo "✅ Controller is ready"
+              break
+            fi
+            
+            if [ $i -eq 24 ]; then
+              echo "❌ Controller failed to be ready after 4 minutes"
+              ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo systemctl status k0scontroller --no-pager -l" || true
+              exit 1
+            fi
+            
+            echo "  Attempt $i/24 - waiting 10s..."
+            sleep 10
+          done
+
+          # Get join token
+          echo "Retrieving worker join token..."
+          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo cat /tmp/worker-token.txt")
+          
+          if [ -z "$JOIN_TOKEN" ]; then
+            echo "❌ Failed to get join token"
+            exit 1
+          fi
+
+          # Join workers in parallel
+          echo "Joining worker nodes to cluster..."
+          
+          join_worker() {
+            local worker=$1
+            echo "Joining $worker to cluster..."
+            
+            if ssh -o StrictHostKeyChecking=no opc@$worker "
+              echo '$JOIN_TOKEN' | sudo tee /tmp/join-token.txt > /dev/null
+              sudo /usr/local/bin/k0s install worker --token-file /tmp/join-token.txt
+              sudo systemctl daemon-reload
+              sudo systemctl enable k0sworker
+              sudo systemctl start k0sworker
+              
+              # Wait for service to be active
+              for i in {1..12}; do
+                if systemctl is-active --quiet k0sworker; then
+                  echo '✅ $worker joined successfully'
+                  break
+                fi
+                sleep 5
+              done
+              
+              sudo rm -f /tmp/join-token.txt
+            "; then
+              echo "✅ $worker setup complete"
+            else
+              echo "❌ $worker setup failed"
+              return 1
+            fi
+          }
+
+          # Join workers in background
+          join_worker "k8s-worker-1-$ENVIRONMENT" &
+          PID1=$!
+          join_worker "k8s-worker-2-$ENVIRONMENT" &
+          PID2=$!
+
+          # Wait for both workers
+          wait $PID1 && wait $PID2
+
+          echo "✅ Cluster setup complete"
+
+      - name: Verify cluster
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          
+          echo "Verifying cluster state..."
+          
+          # Wait for nodes to appear in cluster
+          sleep 60
+          
+          for i in {1..10}; do
+            NODE_COUNT=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes --no-headers 2>/dev/null | wc -l" || echo "0")
+            
+            if [ "$NODE_COUNT" -ge 2 ]; then
+              echo "✅ All worker nodes found in cluster"
+              ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes -o wide"
+              break
+            else
+              if [ $i -eq 10 ]; then
+                echo "❌ Timeout waiting for worker nodes"
+                exit 1
+              fi
+              echo "⏳ Only $NODE_COUNT/2 nodes ready, waiting 15s..."
+              sleep 15
+            fi
+          done
+
+      - name: Configure cluster
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          
+          echo "Configuring cluster nodes and storage..."
+          
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << 'EOF'
+            # Wait for nodes to be ready
+            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k8s-worker-1-$ENVIRONMENT --timeout=120s
+            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k8s-worker-2-$ENVIRONMENT --timeout=120s
+
+            # Label nodes
+            sudo /usr/local/bin/k0s kubectl label node k8s-worker-1-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite
+            sudo /usr/local/bin/k0s kubectl label node k8s-worker-2-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite
+            sudo /usr/local/bin/k0s kubectl label node k8s-worker-1-$ENVIRONMENT storage=local --overwrite
+
+            echo "✅ Cluster configuration complete"
+          EOF
+
+      - name: Deploy applications via Helm
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          
+          echo "Deploying applications via Helm..."
+          
+          # Copy Helm charts to controller
+          scp -r -o StrictHostKeyChecking=no ./helm-charts opc@$CONTROLLER:/tmp/
+
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << EOF
+            cd /tmp/helm-charts
+
+            # Install Helm if not present
+            if ! command -v helm &> /dev/null; then
+              echo "Installing Helm..."
+              curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+              chmod 700 get_helm.sh
+              ./get_helm.sh
+              rm get_helm.sh
+            fi
+
+            # Add Helm repositories
+            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+            helm repo add strrl https://helm.strrl.dev/
+            helm repo update
+
+            # Deploy Cloudflare tunnel controller
+            echo "Deploying Cloudflare tunnel controller..."
+            helm upgrade --install --wait \\
+              -n cloudflare-tunnel --create-namespace \\
+              cloudflare-tunnel-ingress-controller \\
+              strrl/cloudflare-tunnel-ingress-controller \\
+              --set=cloudflare.apiToken="${{ secrets.CLOUDFLARE_K0S_TOKEN }}" \\
+              --set=cloudflare.accountId="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \\
+              --set=cloudflare.tunnelName="webserver-$ENVIRONMENT" \\
+              --set=nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
+              --timeout=300s
+
+            # Deploy webserver application
+            echo "Deploying webserver application..."
+            helm upgrade --install webserver ./webserver \\
+              --namespace webserver --create-namespace \\
+              --values ./webserver/values-$ENVIRONMENT.yaml \\
+              --wait --timeout=300s
+
+            # Deploy monitoring stack
+            echo "Deploying monitoring stack..."
+            helm upgrade --install --wait \\
+              -n monitoring --create-namespace \\
+              monitoring prometheus-community/kube-prometheus-stack \\
+              --set prometheus.prometheusSpec.nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
+              --set grafana.nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
+              --set alertmanager.alertmanagerSpec.nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
+              --timeout=600s
+
+            echo "✅ All applications deployed successfully"
+          EOF
+
+      - name: Verify deployment
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          
+          echo "Verifying deployment..."
+          
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << 'EOF'
+            echo "📊 Cluster Status:"
+            sudo /usr/local/bin/k0s kubectl get nodes -o wide
+
+            echo -e "\n📦 All Pods:"
+            sudo /usr/local/bin/k0s kubectl get pods -A -o wide
+
+            echo -e "\n🌐 Services:"
+            sudo /usr/local/bin/k0s kubectl get svc -A
+
+            echo -e "\n🚪 Ingress:"
+            sudo /usr/local/bin/k0s kubectl get ingress -A
+          EOF
+
+      - name: Mark deployment complete
+        id: deployment_status
+        run: |
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ K8s cluster deployment completed successfully"
+
+      - name: Display summary
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          
+          echo "========================================="
+          echo "🎉 K0s Deployment Complete - $ENVIRONMENT"
+          echo "========================================="
+          echo ""
+          echo "🖥️  Cluster Access:"
+          echo "  SSH: ssh opc@k8s-controller-$ENVIRONMENT"
+          echo "  Kubectl: sudo /usr/local/bin/k0s kubectl get pods -A"
+          echo ""
+          echo "🌐 Application:"
+          echo "  Domain: mclaurinquist.com"
+          echo "  Environment: $ENVIRONMENT"
+          echo ""
+          echo "📊 Monitoring:"
+          echo "  Access via NodePort services on worker nodes"
+          echo "========================================="

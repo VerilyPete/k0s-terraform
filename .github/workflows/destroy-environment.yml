@@ -1,0 +1,90 @@
+name: 'Destroy Environment'
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_destroy:
+        description: 'Type "DESTROY" to confirm'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: '1.6.0'
+  OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+  OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Validate destroy confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_destroy }}" != "DESTROY" ]; then
+            echo "❌ Destroy confirmation failed. You must type 'DESTROY' exactly."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup OCI CLI
+        uses: oracle-actions/configure-oci-cli@v1.3.2
+        with:
+          user: ${{ secrets.OCI_CLI_USER }}
+          tenancy: ${{ secrets.OCI_CLI_TENANCY }}
+          fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          key_content: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          region: ${{ secrets.OCI_CLI_REGION }}
+
+      - name: Create terraform.tfvars
+        working-directory: terraform/environments/${{ github.event.inputs.environment }}
+        run: |
+          cat > terraform.tfvars << EOF
+          compartment_id      = "${{ secrets.OCI_COMPARTMENT_ID }}"
+          availability_domain = "${{ secrets.OCI_AVAILABILITY_DOMAIN }}"
+          subnet_id          = "${{ secrets.OCI_PRIVATE_SUBNET }}"
+          image_id           = "${{ secrets.OCI_CUSTOM_IMAGE }}"
+          ssh_public_key     = "${{ secrets.SSH_PUBLIC_KEY }}"
+          tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
+          EOF
+
+      - name: Terraform Init
+        working-directory: terraform/environments/${{ github.event.inputs.environment }}
+        run: terraform init
+
+      - name: Terraform Destroy
+        working-directory: terraform/environments/${{ github.event.inputs.environment }}
+        run: |
+          echo "🗑️  Destroying ${{ github.event.inputs.environment }} environment..."
+          terraform destroy -auto-approve
+
+      - name: Destroy Summary
+        run: |
+          echo "========================================="
+          echo "🗑️  Environment Destroyed"
+          echo "========================================="
+          echo ""
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "All resources have been destroyed."
+          echo "========================================="

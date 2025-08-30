@@ -1,0 +1,74 @@
+# ============================================================================
+# REUSABLE ACTION: SETUP CONNECTIVITY
+# ============================================================================
+# Purpose: Configure SSH keys and Tailscale connection for cluster access
+# Used by: All stages that need to connect to K8s instances
+# ============================================================================
+
+name: 'Setup Connectivity'
+description: 'Setup SSH and Tailscale connectivity for cluster nodes'
+
+inputs:
+  ssh_private_key:
+    description: 'SSH private key for cluster access'
+    required: true
+  tailscale_auth_key:
+    description: 'Tailscale auth key for private networking'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup SSH
+      shell: bash
+      run: |
+        echo "Setting up SSH connectivity..."
+        
+        # Create SSH directory
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        
+        # Write private key
+        echo "${{ inputs.ssh_private_key }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        # Add to SSH agent
+        eval $(ssh-agent -s)
+        ssh-add ~/.ssh/id_rsa
+        
+        # Configure SSH for cluster nodes
+        cat >> ~/.ssh/config << EOF
+        Host k8s-*
+          User opc
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
+          ConnectTimeout 10
+          ServerAliveInterval 60
+          ServerAliveCountMax 3
+        EOF
+        
+        chmod 600 ~/.ssh/config
+        
+        echo "✅ SSH setup complete"
+
+    - name: Setup Tailscale
+      shell: bash
+      run: |
+        echo "Setting up Tailscale connectivity..."
+        
+        # Install Tailscale CLI
+        curl -fsSL https://tailscale.com/install.sh | sh
+        
+        # Start Tailscale with auth key
+        tailscale up --authkey="${{ inputs.tailscale_auth_key }}" --hostname="github-runner-$(date +%s)" --accept-dns=false
+        
+        # Wait for Tailscale to be ready
+        for i in {1..30}; do
+          if tailscale status >/dev/null 2>&1; then
+            echo "✅ Tailscale is connected"
+            break
+          fi
+          sleep 1
+        done
+        
+        echo "✅ Tailscale setup complete"
