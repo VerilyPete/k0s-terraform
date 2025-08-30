@@ -63,20 +63,20 @@ jobs:
           rm install.sh
           
           # Configure OCI CLI
-          mkdir -p ~/.oci
-          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/oci_api_key.pem
+          mkdir -p /home/runner/.oci
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /home/runner/.oci/oci_api_key.pem
+          chmod 600 /home/runner/.oci/oci_api_key.pem
           
-          cat > ~/.oci/config << EOF
+          cat > /home/runner/.oci/config << EOF
           [DEFAULT]
           user=${{ secrets.OCI_CLI_USER }}
           fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
           tenancy=${{ secrets.OCI_CLI_TENANCY }}
           region=${{ secrets.OCI_CLI_REGION }}
-          key_file=~/.oci/oci_api_key.pem
+          key_file=/home/runner/.oci/oci_api_key.pem
           EOF
           
-          chmod 600 ~/.oci/config
+          chmod 600 /home/runner/.oci/config
 
       - name: Create terraform.tfvars
         working-directory: terraform/environments/${{ github.event.inputs.environment }}
@@ -86,7 +86,7 @@ jobs:
           tenancy_ocid       = "${{ secrets.OCI_CLI_TENANCY }}"
           user_ocid          = "${{ secrets.OCI_CLI_USER }}"
           fingerprint        = "${{ secrets.OCI_CLI_FINGERPRINT }}"
-          private_key_path   = "~/.oci/oci_api_key.pem"
+          private_key_path   = "/home/runner/.oci/oci_api_key.pem"
           region             = "${{ secrets.OCI_CLI_REGION }}"
           
           # Infrastructure Configuration
