@@ -4,7 +4,7 @@
 tenancy_ocid       = "ocid1.tenancy.oc1..aaaaaaaa..."
 user_ocid          = "ocid1.user.oc1..aaaaaaaa..."
 fingerprint        = "12:34:56:78:90:ab:cd:ef:12:34:56:78:90:ab:cd:ef"
-private_key_path   = "/home/runner/.oci/oci_api_key.pem"
+private_key_path   = "/path/to/your/oci_api_key.pem"
 region             = "us-ashburn-1"
 
 # Infrastructure Configuration

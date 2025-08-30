@@ -77,6 +77,14 @@ jobs:
           EOF
           
           chmod 600 /home/runner/.oci/config
+          
+          # Debug: Check if files were created
+          echo "=== Debug: OCI Configuration ==="
+          ls -la /home/runner/.oci/
+          echo "Private key file exists:" 
+          test -f /home/runner/.oci/oci_api_key.pem && echo "YES" || echo "NO"
+          echo "Current working directory: $(pwd)"
+          echo "Home directory: $HOME"
 
       - name: Determine environment
         id: env
@@ -107,6 +115,31 @@ jobs:
           ssh_public_key     = "${{ secrets.SSH_PUBLIC_KEY }}"
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
           EOF
+          
+          # No path expansion needed - using absolute paths
+          
+          # Debug: Show generated terraform.tfvars
+          echo "=== Debug: Generated terraform.tfvars ==="
+          cat terraform.tfvars
+
+      - name: Verify OCI Configuration
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: |
+          echo "=== Verifying OCI Configuration Before Terraform ==="
+          
+          # Check private key file exists
+          PRIVATE_KEY_PATH=$(grep private_key_path terraform.tfvars | cut -d'"' -f2)
+          echo "Private key path from terraform.tfvars: $PRIVATE_KEY_PATH"
+          
+          if [ -f "$PRIVATE_KEY_PATH" ]; then
+            echo "✅ Private key file exists at: $PRIVATE_KEY_PATH"
+            ls -la "$PRIVATE_KEY_PATH"
+          else
+            echo "❌ Private key file NOT found at: $PRIVATE_KEY_PATH"
+            echo "Checking absolute path directory:"
+            ls -la /home/runner/.oci/ || echo "/home/runner/.oci directory not found"
+            exit 1
+          fi
 
       - name: Terraform Init
         working-directory: terraform/environments/${{ steps.env.outputs.environment }}
