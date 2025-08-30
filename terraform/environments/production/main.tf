@@ -2,7 +2,6 @@ terraform {
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "~> 5.0"
     }
     time = {
       source  = "hashicorp/time"
@@ -27,7 +26,9 @@ terraform {
 
 # Provider configuration
 provider "oci" {
-  # Configuration will come from environment variables or instance principal
+  # Configuration comes from environment variables set by GitHub Actions
+  auth                = "APIKey"
+  config_file_profile = "DEFAULT"
 }
 
 # Data sources for existing OCI resources
