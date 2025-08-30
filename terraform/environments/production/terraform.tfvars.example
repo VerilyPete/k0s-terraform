@@ -1,0 +1,37 @@
+# Copy this to terraform.tfvars and fill in your values
+
+# OCI Configuration
+compartment_id      = "ocid1.compartment.oc1..aaaaaaaa..."
+availability_domain = "AD-1"
+subnet_id          = "ocid1.subnet.oc1.iad.aaaaaaaa..."
+image_id           = "ocid1.image.oc1.iad.aaaaaaaa..."
+
+# Access Configuration
+ssh_public_key     = "ssh-rsa AAAAB3NzaC1yc2E..."
+tailscale_auth_key = "tskey-auth-..."
+
+# Network Configuration (optional overrides)
+# k8s_cluster_cidr    = "10.244.0.0/16"
+# k8s_service_cidr    = "10.96.0.0/12" 
+# private_subnet_cidr = "10.0.1.0/24"
+
+# Resource Configuration
+# controller_shape_config = {
+#   ocpus     = 1
+#   memory_gb = 6
+# }
+# worker_shape_config = {
+#   ocpus     = 1 
+#   memory_gb = 6
+# }
+# worker_count = 2
+
+# Storage Configuration
+# storage_volumes = {
+#   "worker-storage" = {
+#     size_gb      = 50
+#     display_name = "k8s-worker-1-data"
+#     description  = "Primary storage for worker-1"
+#   }
+# }
+# backup_policy_enabled = true

@@ -14,7 +14,7 @@ terraform {
   # Backend configuration removed - using local state
   # To use remote state with OCI Object Storage, uncomment and configure:
   # backend "s3" {
-  #   bucket                      = "terraform-state-staging"
+  #   bucket                      = "terraform-state-production"
   #   key                         = "k0s-cluster/terraform.tfstate"
   #   region                      = "us-ashburn-1"
   #   endpoint                    = "https://namespace.compat.objectstorage.us-ashburn-1.oraclecloud.com"
@@ -37,7 +37,7 @@ data "oci_identity_availability_domains" "ads" {
 
 # Local values for environment-specific configuration
 locals {
-  environment = "staging"
+  environment = "production"
   common_tags = {
     Environment = local.environment
     Project     = "k0s-cluster"
