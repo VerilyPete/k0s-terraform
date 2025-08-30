@@ -1,6 +1,7 @@
 # Security list for K8s cluster communication
 resource "oci_core_security_list" "k8s_cluster" {
   compartment_id = var.compartment_id
+  vcn_id         = var.vcn_id
   display_name   = "k8s-cluster-security-list-${var.environment}"
 
   # Ingress rules

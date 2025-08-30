@@ -1,7 +1,3 @@
-# Data source for current user
-data "oci_identity_user" "current_user" {
-  user_id = var.compartment_id
-}
 
 # Controller instance
 resource "oci_core_instance" "controller" {

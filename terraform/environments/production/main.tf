@@ -50,6 +50,7 @@ module "networking" {
   source = "../../modules/networking"
 
   compartment_id      = var.compartment_id
+  vcn_id              = var.vcn_id
   environment         = local.environment
   k8s_cluster_cidr    = var.k8s_cluster_cidr
   k8s_service_cidr    = var.k8s_service_cidr

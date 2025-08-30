@@ -13,6 +13,11 @@ variable "subnet_id" {
   type        = string
 }
 
+variable "vcn_id" {
+  description = "OCI VCN ID"
+  type        = string
+}
+
 variable "image_id" {
   description = "Custom image OCID"
   type        = string

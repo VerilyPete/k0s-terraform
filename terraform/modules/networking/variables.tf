@@ -3,6 +3,11 @@ variable "compartment_id" {
   type        = string
 }
 
+variable "vcn_id" {
+  description = "OCI VCN ID where the security list will be created"
+  type        = string
+}
+
 variable "environment" {
   description = "Environment name (staging, production)"
   type        = string
