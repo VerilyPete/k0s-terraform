@@ -49,13 +49,28 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Setup OCI CLI
-        uses: oracle-actions/configure-oci-cli@v1.3.2
-        with:
-          user: ${{ secrets.OCI_CLI_USER }}
-          tenancy: ${{ secrets.OCI_CLI_TENANCY }}
-          fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
-          key_content: ${{ secrets.OCI_CLI_KEY_CONTENT }}
-          region: ${{ secrets.OCI_CLI_REGION }}
+        run: |
+          # Install OCI CLI
+          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh > install.sh
+          chmod +x install.sh
+          ./install.sh --accept-all-defaults
+          rm install.sh
+          
+          # Configure OCI CLI
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          region=${{ secrets.OCI_CLI_REGION }}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+          
+          chmod 600 ~/.oci/config
 
       - name: Create terraform.tfvars
         working-directory: terraform/environments/${{ github.event.inputs.environment }}
