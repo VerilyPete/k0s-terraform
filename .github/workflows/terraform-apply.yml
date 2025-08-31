@@ -82,8 +82,10 @@ jobs:
           wc -c /home/runner/.oci/oci_api_key.pem 2>/dev/null || echo "Cannot read file"
           echo "Private key file permissions:" 
           ls -la /home/runner/.oci/oci_api_key.pem
-          echo "First few lines of private key (safe check):"
-          head -2 /home/runner/.oci/oci_api_key.pem 2>/dev/null || echo "Cannot read private key"
+          echo "Private key format check:"
+          head -1 /home/runner/.oci/oci_api_key.pem 2>/dev/null || echo "Cannot read private key"
+          echo "Private key validation:"
+          openssl rsa -in /home/runner/.oci/oci_api_key.pem -check -noout 2>/dev/null && echo "✅ Private key is valid RSA format" || echo "❌ Private key validation failed"
           echo "Current working directory: $(pwd)"
           echo "Home directory: $HOME"
 
