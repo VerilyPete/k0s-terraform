@@ -2,7 +2,7 @@ terraform {
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "~> 6.0"  # Pin to major version for stability
+      version = "~> 7.15"  # Latest as of August 2025
     }
     time = {
       source  = "hashicorp/time"

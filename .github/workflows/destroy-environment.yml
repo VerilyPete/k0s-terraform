@@ -97,9 +97,10 @@ jobs:
           image_id           = "${{ secrets.OCI_CUSTOM_IMAGE }}"
           ssh_public_key     = "${{ secrets.SSH_PUBLIC_KEY }}"
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
+          oci_namespace      = "${{ secrets.OCI_NAMESPACE }}"
           EOF
 
-      - name: Backend Configuration Info
+      - name: OCI Backend Configuration Info
         working-directory: terraform/environments/${{ github.event.inputs.environment }}
         run: |
           echo "=== OCI Backend Configuration ==="
@@ -108,6 +109,7 @@ jobs:
           echo "Namespace: ${{ secrets.OCI_NAMESPACE }}"
           echo "Region: ${{ secrets.OCI_CLI_REGION }}"
           echo "Key: k0s-cluster/terraform.tfstate"
+          echo "Auth: APIKey (using ~/.oci/config profile DEFAULT)"
 
       - name: Terraform Init
         working-directory: terraform/environments/${{ github.event.inputs.environment }}

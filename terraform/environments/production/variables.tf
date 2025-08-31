@@ -5,7 +5,7 @@ variable "tenancy_ocid" {
 }
 
 variable "oci_namespace" {
-  description = "OCI Object Storage namespace"
+  description = "OCI Object Storage namespace for backend configuration"
   type        = string
 }
 
