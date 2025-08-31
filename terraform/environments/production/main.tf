@@ -9,7 +9,7 @@ terraform {
       version = "~> 0.12"  # Updated to modern version
     }
   }
-  required_version = ">= 1.9.0"  # Require modern Terraform with OCI backend
+  required_version = ">= 1.12.0"  # Require Terraform with OCI backend support
 
   # Backend configuration using OCI native backend
   backend "oci" {
