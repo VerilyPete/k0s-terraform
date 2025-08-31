@@ -45,7 +45,7 @@ write_files:
 
       # Start Tailscale
       echo "Starting Tailscale with hostname: ${hostname}"
-      tailscale up --authkey="${tailscale_auth_key}" --hostname="${hostname}" --accept-dns=false
+      sudo tailscale up --authkey="${tailscale_auth_key}" --hostname="${hostname}" --accept-dns=false
 
       echo "=== Tailscale Installation Complete ==="
 

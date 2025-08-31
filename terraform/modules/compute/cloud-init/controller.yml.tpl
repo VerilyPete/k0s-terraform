@@ -146,7 +146,7 @@ write_files:
 
       # Start Tailscale
       echo "Starting Tailscale with hostname: ${hostname}"
-      tailscale up --authkey="${tailscale_auth_key}" --hostname="${hostname}" --accept-dns=false
+      sudo tailscale up --authkey="${tailscale_auth_key}" --hostname="${hostname}" --accept-dns=false
 
       # Configure DNS to prevent conflicts
       if [ ! -f /etc/resolv.conf.backup ]; then
