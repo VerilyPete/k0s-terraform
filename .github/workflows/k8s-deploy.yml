@@ -60,60 +60,84 @@ jobs:
       - name: Wait for all nodes to be accessible
         run: |
           echo "⏳ Waiting for all nodes to be accessible via Tailscale..."
-          
-          echo "🕐 Allowing time for nodes to boot and connect to Tailscale..."
-          echo "  - Nodes need to boot up (~2-3 minutes)"
-          echo "  - Cloud-init needs to run (install Tailscale, set hostname, etc.)"
-          echo "  - Tailscale needs to connect and register"
-          echo ""
-          
-          # Wait 4 minutes for nodes to boot and connect
-          echo "Waiting 4 minutes for initial boot and Tailscale connection..."
-          for i in {1..24}; do
-            echo "  ⏰ $((i*10)) seconds elapsed (waiting 240 seconds total)..."
-            sleep 10
-          done
-          
-          echo ""
-          echo "Current Tailscale status:"
-          sudo tailscale status
+          echo "  - Checking every 20 seconds for node availability"
+          echo "  - Will proceed as soon as all nodes are reachable"
           echo ""
 
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          for node in k8s-controller-$ENVIRONMENT k8s-worker-1-$ENVIRONMENT k8s-worker-2-$ENVIRONMENT; do
-            echo "🔍 Checking $node..."
-            MAX_ATTEMPTS=45
-            for i in $(seq 1 $MAX_ATTEMPTS); do
-              # First check if we can reach the node at all
-              if ! ping -c 1 -W 2 $node >/dev/null 2>&1; then
-                echo "  Attempt $i/$MAX_ATTEMPTS - $node not reachable via network, waiting 10s..."
-                sleep 10
+          NODES=("k8s-controller-$ENVIRONMENT" "k8s-worker-1-$ENVIRONMENT" "k8s-worker-2-$ENVIRONMENT")
+          READY_NODES=()
+          MAX_WAIT_TIME=900  # 15 minutes maximum
+          CHECK_INTERVAL=20  # Check every 20 seconds
+          ELAPSED_TIME=0
+
+          echo "🔍 Monitoring nodes: ${NODES[*]}"
+          echo ""
+
+          while [ ${#READY_NODES[@]} -lt ${#NODES[@]} ] && [ $ELAPSED_TIME -lt $MAX_WAIT_TIME ]; do
+            echo "⏰ Check at $ELAPSED_TIME seconds (${#READY_NODES[@]}/${#NODES[@]} nodes ready)..."
+            
+            # Show current Tailscale status every 5 checks (100 seconds)
+            if [ $((ELAPSED_TIME % 100)) -eq 0 ]; then
+              echo "Current Tailscale status:"
+              sudo tailscale status | head -10
+              echo ""
+            fi
+
+            for node in "${NODES[@]}"; do
+              # Skip if node is already ready
+              if [[ " ${READY_NODES[*]} " =~ " $node " ]]; then
+                continue
+              fi
+
+              echo "  🔍 Checking $node..."
+              
+              # Check if node appears in Tailscale first
+              if ! sudo tailscale status | grep -q "$node"; then
+                echo "    ⏱️  $node not in Tailscale network yet"
                 continue
               fi
               
-              # Try SSH with timeout
-              if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes opc@$node "echo '✅ $node is ready'" >/dev/null 2>&1; then
-                echo "✅ $node is accessible"
-                break
+              # Test ping connectivity
+              if ! timeout 5 ping -c 1 -W 2 "$node" >/dev/null 2>&1; then
+                echo "    ⏱️  $node not pingable yet"
+                continue
               fi
               
-              if [ $i -eq $MAX_ATTEMPTS ]; then
-                echo "❌ Failed to connect to $node after $MAX_ATTEMPTS attempts"
-                exit 1
+              # Test SSH connectivity
+              if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes "opc@$node" "echo 'Node ready'" >/dev/null 2>&1; then
+                echo "    ✅ $node is accessible!"
+                READY_NODES+=("$node")
+              else
+                echo "    ⏱️  $node SSH not ready yet"
               fi
-              
-              # Show progress every 5 attempts
-              if [ $((i % 5)) -eq 0 ]; then
-                echo "  Attempt $i/$MAX_ATTEMPTS - SSH failed, checking port 22..."
-                timeout 3 nc -zv $node 22 2>/dev/null && echo "    Port 22 is open" || echo "    Port 22 not accessible yet"
-              fi
-              
-              echo "  Attempt $i/$MAX_ATTEMPTS - waiting 10s..."
-              sleep 10
             done
+
+            # Break if all nodes are ready
+            if [ ${#READY_NODES[@]} -eq ${#NODES[@]} ]; then
+              break
+            fi
+
+            echo "  💤 Waiting $CHECK_INTERVAL seconds before next check..."
+            sleep $CHECK_INTERVAL
+            ELAPSED_TIME=$((ELAPSED_TIME + CHECK_INTERVAL))
           done
 
-          echo "✅ All nodes are accessible"
+          echo ""
+          if [ ${#READY_NODES[@]} -eq ${#NODES[@]} ]; then
+            echo "🎉 All nodes are accessible! (took $ELAPSED_TIME seconds)"
+            echo "✅ Ready nodes: ${READY_NODES[*]}"
+          else
+            echo "❌ Timeout: Only ${#READY_NODES[@]}/${#NODES[@]} nodes became accessible after $ELAPSED_TIME seconds"
+            echo "✅ Ready nodes: ${READY_NODES[*]}"
+            echo "⏱️  Still waiting for: "
+            for node in "${NODES[@]}"; do
+              if [[ ! " ${READY_NODES[*]} " =~ " $node " ]]; then
+                echo "    - $node"
+              fi
+            done
+            exit 1
+          fi
 
       - name: Setup K8s cluster
         if: github.event.inputs.skip_cluster_setup != 'true'
