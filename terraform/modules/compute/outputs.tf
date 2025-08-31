@@ -22,14 +22,14 @@ output "worker_instances" {
   }
 }
 
-output "storage_volume" {
-  description = "Storage volume details for worker-1"
-  value = {
-    id           = oci_core_volume.worker_storage.id
-    display_name = oci_core_volume.worker_storage.display_name
-    size_gb      = oci_core_volume.worker_storage.size_in_gbs
-    state        = oci_core_volume.worker_storage.state
-  }
+output "storage_attachment" {
+  description = "Storage volume attachment details for worker-1"
+  value = length(oci_core_volume_attachment.worker_storage) > 0 ? {
+    id           = oci_core_volume_attachment.worker_storage[0].id
+    volume_id    = oci_core_volume_attachment.worker_storage[0].volume_id
+    instance_id  = oci_core_volume_attachment.worker_storage[0].instance_id
+    state        = oci_core_volume_attachment.worker_storage[0].state
+  } : null
 }
 
 output "instance_ids" {

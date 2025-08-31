@@ -98,6 +98,23 @@ jobs:
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
           EOF
 
+      - name: Configure OCI Object Storage Backend
+        working-directory: terraform/environments/${{ github.event.inputs.environment }}
+        run: |
+          # Configure S3-compatible backend for OCI Object Storage
+          export AWS_ACCESS_KEY_ID="${{ secrets.OCI_CLI_USER }}"
+          export AWS_SECRET_ACCESS_KEY="${{ secrets.OCI_CLI_KEY_CONTENT }}"
+          export AWS_S3_ENDPOINT="https://${{ secrets.OCI_NAMESPACE }}.compat.objectstorage.${{ secrets.OCI_CLI_REGION }}.oraclecloud.com"
+          
+          echo "Backend configuration:"
+          echo "Endpoint: $AWS_S3_ENDPOINT"
+          echo "Bucket: terraform-state-${{ github.event.inputs.environment }}"
+          
+          # Export for subsequent steps
+          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
+          echo "AWS_S3_ENDPOINT=$AWS_S3_ENDPOINT" >> $GITHUB_ENV
+
       - name: Terraform Init
         working-directory: terraform/environments/${{ github.event.inputs.environment }}
         run: terraform init

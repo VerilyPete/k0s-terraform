@@ -45,19 +45,7 @@ resource "oci_core_instance" "controller" {
   }
 }
 
-# Storage volume for worker-1
-resource "oci_core_volume" "worker_storage" {
-  compartment_id      = var.compartment_id
-  availability_domain = var.availability_domain
-  display_name        = "k8s-worker-1-data-${var.environment}"
-  size_in_gbs         = var.storage_size_gb
-
-  freeform_tags = {
-    "Environment" = var.environment
-    "Role"        = "storage"
-    "ManagedBy"   = "terraform"
-  }
-}
+# Storage volumes are now managed by the storage module
 
 # Worker instances
 resource "oci_core_instance" "workers" {
@@ -119,11 +107,13 @@ resource "oci_core_instance" "workers" {
   }
 }
 
-# Attach storage volume to worker-1
+# Attach storage volume to worker-1 (volume created by storage module)
 resource "oci_core_volume_attachment" "worker_storage" {
+  count = length(var.storage_volume_ids) > 0 ? 1 : 0
+  
   attachment_type = "paravirtualized"
   instance_id     = oci_core_instance.workers["worker-1"].id
-  volume_id       = oci_core_volume.worker_storage.id
+  volume_id       = var.storage_volume_ids["worker-storage"]
   display_name    = "worker-1-storage-attachment-${var.environment}"
 
   # Ensure the instance is running before attaching

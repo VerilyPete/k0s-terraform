@@ -64,8 +64,8 @@ variable "worker_count" {
   default     = 2
 }
 
-variable "storage_size_gb" {
-  description = "Storage size for worker-1 in GB"
-  type        = number
-  default     = 50
+variable "storage_volume_ids" {
+  description = "Map of storage volume IDs from storage module"
+  type        = map(string)
+  default     = {}
 }

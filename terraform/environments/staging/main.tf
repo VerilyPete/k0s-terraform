@@ -10,18 +10,20 @@ terraform {
   }
   required_version = ">= 1.5"
 
-  # Backend configuration removed - using local state
-  # To use remote state with OCI Object Storage, uncomment and configure:
-  # backend "s3" {
-  #   bucket                      = "terraform-state-staging"
-  #   key                         = "k0s-cluster/terraform.tfstate"
-  #   region                      = "us-ashburn-1"
-  #   endpoint                    = "https://namespace.compat.objectstorage.us-ashburn-1.oraclecloud.com"
-  #   skip_region_validation      = true
-  #   skip_credentials_validation = true
-  #   skip_metadata_api_check     = true
-  #   force_path_style           = true
-  # }
+  # Backend configuration for OCI Object Storage
+  # The endpoint and credentials will be configured via environment variables
+  backend "s3" {
+    bucket                      = "terraform-state-staging"
+    key                         = "k0s-cluster/terraform.tfstate"
+    region                      = "us-ashburn-1"
+    skip_region_validation      = true
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    force_path_style           = true
+    # endpoint will be set via AWS_S3_ENDPOINT environment variable
+    # access_key will be set via AWS_ACCESS_KEY_ID environment variable  
+    # secret_key will be set via AWS_SECRET_ACCESS_KEY environment variable
+  }
 }
 
 # Provider configuration
@@ -88,7 +90,7 @@ module "compute" {
   controller_shape_config = var.controller_shape_config
   worker_shape_config   = var.worker_shape_config
   worker_count          = var.worker_count
-  storage_size_gb       = var.storage_volumes["worker-storage"].size_gb
+  storage_volume_ids    = module.storage.volume_ids
 
   depends_on = [
     module.networking,
