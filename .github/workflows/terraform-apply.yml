@@ -39,6 +39,10 @@ jobs:
   terraform-apply:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
+    outputs:
+      controller_ip: ${{ steps.outputs.outputs.controller_ip }}
+      controller_hostname: ${{ steps.outputs.outputs.controller_hostname }}
+      environment: ${{ steps.outputs.outputs.environment }}
     
     steps:
       - name: Checkout repository
@@ -191,15 +195,7 @@ jobs:
           echo "controller_hostname=$CONTROLLER_HOSTNAME" >> $GITHUB_OUTPUT
           echo "environment=${{ steps.env.outputs.environment }}" >> $GITHUB_OUTPUT
 
-      - name: Trigger K8s Deployment
-        if: github.event.inputs.destroy != 'true'
-        uses: ./.github/workflows/k8s-deploy.yml
-        with:
-          environment: ${{ steps.env.outputs.environment }}
-          controller_ip: ${{ steps.outputs.outputs.controller_ip }}
-          controller_hostname: ${{ steps.outputs.outputs.controller_hostname }}
-
-      - name: Deployment Summary
+      - name: Terraform Apply Summary
         if: github.event.inputs.destroy != 'true'
         run: |
           echo "============================================="
@@ -209,5 +205,16 @@ jobs:
           echo "Controller: ${{ steps.outputs.outputs.controller_hostname }}"
           echo "Private IP: ${{ steps.outputs.outputs.controller_ip }}"
           echo ""
-          echo "Next: K8s cluster setup and application deployment"
+          echo "Next: K8s cluster setup and application deployment will run in separate job"
           echo "============================================="
+
+  # Call the K8s deployment workflow
+  k8s-deployment:
+    if: github.event.inputs.destroy != 'true'
+    needs: terraform-apply
+    uses: ./.github/workflows/k8s-deploy.yml
+    with:
+      environment: ${{ needs.terraform-apply.outputs.environment }}
+      controller_ip: ${{ needs.terraform-apply.outputs.controller_ip }}
+      controller_hostname: ${{ needs.terraform-apply.outputs.controller_hostname }}
+    secrets: inherit
