@@ -140,16 +140,30 @@ jobs:
         run: |
           echo "=== Verifying OCI Configuration Before Terraform ==="
           
-          # Check private key file exists
-          PRIVATE_KEY_PATH=$(grep private_key_path terraform.tfvars | cut -d'"' -f2)
-          echo "Private key path from terraform.tfvars: $PRIVATE_KEY_PATH"
-          
-          if [ -f "$PRIVATE_KEY_PATH" ]; then
-            echo "✅ Private key file exists at: $PRIVATE_KEY_PATH"
-            ls -la "$PRIVATE_KEY_PATH"
+          # Check that private key content exists in terraform.tfvars
+          if grep -q "private_key = <<EOT" terraform.tfvars; then
+            echo "✅ Private key content found in terraform.tfvars"
+            
+            # Verify the private key content is not empty
+            PRIVATE_KEY_LINES=$(sed -n '/private_key = <<EOT/,/^EOT$/p' terraform.tfvars | wc -l)
+            if [ "$PRIVATE_KEY_LINES" -gt 2 ]; then
+              echo "✅ Private key content appears valid ($PRIVATE_KEY_LINES lines)"
+            else
+              echo "❌ Private key content appears empty or invalid"
+              exit 1
+            fi
           else
-            echo "❌ Private key file NOT found at: $PRIVATE_KEY_PATH"
-            echo "Checking absolute path directory:"
+            echo "❌ Private key content NOT found in terraform.tfvars"
+            echo "Expected format: private_key = <<EOT"
+            exit 1
+          fi
+          
+          # Also verify OCI CLI configuration exists
+          if [ -f "/home/runner/.oci/oci_api_key.pem" ]; then
+            echo "✅ OCI CLI private key file exists"
+            ls -la /home/runner/.oci/oci_api_key.pem
+          else
+            echo "❌ OCI CLI private key file not found"
             ls -la /home/runner/.oci/ || echo "/home/runner/.oci directory not found"
             exit 1
           fi
