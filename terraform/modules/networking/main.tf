@@ -142,7 +142,7 @@ resource "oci_core_security_list" "k8s_cluster" {
     stateless        = false
   }
 
-  defined_tags = {
+  freeform_tags = {
     "Environment" = var.environment
     "ManagedBy"   = "terraform"
   }

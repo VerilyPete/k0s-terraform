@@ -22,14 +22,11 @@ resource "oci_core_volume" "storage_volumes" {
   display_name        = "${each.value.display_name}-${var.environment}"
   size_in_gbs         = each.value.size_gb
 
-  defined_tags = {
+  freeform_tags = {
     "Environment" = var.environment
     "Purpose"     = each.value.description
     "ManagedBy"   = "terraform"
-  }
-
-  freeform_tags = {
-    "Volume" = each.key
+    "Volume"      = each.key
   }
 }
 

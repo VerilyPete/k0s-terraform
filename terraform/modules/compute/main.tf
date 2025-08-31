@@ -32,7 +32,7 @@ resource "oci_core_instance" "controller" {
     }))
   }
 
-  defined_tags = {
+  freeform_tags = {
     "Environment" = var.environment
     "Role"        = "controller"
     "ManagedBy"   = "terraform"
@@ -52,7 +52,7 @@ resource "oci_core_volume" "worker_storage" {
   display_name        = "k8s-worker-1-data-${var.environment}"
   size_in_gbs         = var.storage_size_gb
 
-  defined_tags = {
+  freeform_tags = {
     "Environment" = var.environment
     "Role"        = "storage"
     "ManagedBy"   = "terraform"
@@ -105,7 +105,7 @@ resource "oci_core_instance" "workers" {
     }))
   }
 
-  defined_tags = {
+  freeform_tags = {
     "Environment" = var.environment
     "Role"        = "worker"
     "Worker"      = each.key
