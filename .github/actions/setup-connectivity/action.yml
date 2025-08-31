@@ -60,11 +60,11 @@ runs:
         curl -fsSL https://tailscale.com/install.sh | sh
         
         # Start Tailscale with auth key
-        tailscale up --authkey="${{ inputs.tailscale_auth_key }}" --hostname="github-runner-$(date +%s)" --accept-dns=false
+        sudo tailscale up --authkey="${{ inputs.tailscale_auth_key }}" --hostname="github-runner-$(date +%s)" --accept-dns=false
         
         # Wait for Tailscale to be ready
         for i in {1..30}; do
-          if tailscale status >/dev/null 2>&1; then
+          if sudo tailscale status >/dev/null 2>&1; then
             echo "✅ Tailscale is connected"
             break
           fi
