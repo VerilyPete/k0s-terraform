@@ -126,7 +126,6 @@ jobs:
           image_id           = "${{ secrets.OCI_CUSTOM_IMAGE }}"
           ssh_public_key     = "${{ secrets.SSH_PUBLIC_KEY }}"
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
-          oci_namespace      = "${{ secrets.OCI_NAMESPACE }}"
           EOF
           
           # No path expansion needed - using absolute paths
