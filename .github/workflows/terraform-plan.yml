@@ -20,12 +20,7 @@ env:
   OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
   OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
   OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
-  # Terraform OCI Provider environment variables
-  TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
-  TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
-  TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
-  TF_VAR_region: ${{ secrets.OCI_CLI_REGION }}
-  TF_VAR_private_key_path: ~/.oci/oci_api_key.pem
+  # These environment variables are no longer needed - using terraform.tfvars instead
 
 jobs:
   terraform-plan:
@@ -70,14 +65,23 @@ jobs:
       - name: Create terraform.tfvars
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
-          cat > terraform.tfvars << EOF
+          # Create terraform.tfvars with private key content
+          cat > terraform.tfvars << 'TERRAFORM_EOF'
           # OCI Provider Configuration
           tenancy_ocid       = "${{ secrets.OCI_CLI_TENANCY }}"
           user_ocid          = "${{ secrets.OCI_CLI_USER }}"
           fingerprint        = "${{ secrets.OCI_CLI_FINGERPRINT }}"
-          private_key_path   = "/home/runner/.oci/oci_api_key.pem"
           region             = "${{ secrets.OCI_CLI_REGION }}"
+          TERRAFORM_EOF
           
+          # Add private key content safely
+          echo "private_key = <<EOT" >> terraform.tfvars
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" >> terraform.tfvars
+          echo "EOT" >> terraform.tfvars
+          echo "" >> terraform.tfvars
+          
+          # Add infrastructure configuration
+          cat >> terraform.tfvars << EOF
           # Infrastructure Configuration
           compartment_id      = "${{ secrets.OCI_COMPARTMENT_ID }}"
           availability_domain = "${{ secrets.OCI_AVAILABILITY_DOMAIN }}"
