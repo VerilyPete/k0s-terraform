@@ -60,7 +60,21 @@ jobs:
       - name: Wait for all nodes to be accessible
         run: |
           echo "⏳ Waiting for all nodes to be accessible via Tailscale..."
-
+          
+          echo "🕐 Allowing time for nodes to boot and connect to Tailscale..."
+          echo "  - Nodes need to boot up (~2-3 minutes)"
+          echo "  - Cloud-init needs to run (install Tailscale, set hostname, etc.)"
+          echo "  - Tailscale needs to connect and register"
+          echo ""
+          
+          # Wait 4 minutes for nodes to boot and connect
+          echo "Waiting 4 minutes for initial boot and Tailscale connection..."
+          for i in {1..24}; do
+            echo "  ⏰ $((i*10)) seconds elapsed (waiting 240 seconds total)..."
+            sleep 10
+          done
+          
+          echo ""
           echo "Current Tailscale status:"
           sudo tailscale status
           echo ""
