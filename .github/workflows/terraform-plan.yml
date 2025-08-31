@@ -94,21 +94,29 @@ jobs:
       - name: Configure OCI Object Storage Backend
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
-          # Configure S3-compatible backend for OCI Object Storage
-          # Note: These should be Customer Secret Keys, not API keys
-          export AWS_ACCESS_KEY_ID="${{ secrets.OCI_S3_ACCESS_KEY }}"
-          export AWS_SECRET_ACCESS_KEY="${{ secrets.OCI_S3_SECRET_KEY }}"
-          export AWS_ENDPOINT_URL_S3="https://${{ secrets.OCI_NAMESPACE }}.compat.objectstorage.${{ secrets.OCI_CLI_REGION }}.oraclecloud.com"
+          # Configure HTTP backend for OCI Object Storage
+          # This uses OCI Object Storage REST API directly, avoiding AWS-specific logic
+          BUCKET_NAME="terraform-state-${{ matrix.environment }}"
+          OBJECT_NAME="k0s-cluster/terraform.tfstate"
+          BASE_URL="https://${{ secrets.OCI_NAMESPACE }}.objectstorage.${{ secrets.OCI_CLI_REGION }}.oraclecloud.com"
+          
+          # Set HTTP backend environment variables
+          export TF_HTTP_ADDRESS="${BASE_URL}/n/${{ secrets.OCI_NAMESPACE }}/b/${BUCKET_NAME}/o/${OBJECT_NAME}"
+          export TF_HTTP_LOCK_ADDRESS="${BASE_URL}/n/${{ secrets.OCI_NAMESPACE }}/b/${BUCKET_NAME}/o/${OBJECT_NAME}.lock"
+          export TF_HTTP_UNLOCK_ADDRESS="${BASE_URL}/n/${{ secrets.OCI_NAMESPACE }}/b/${BUCKET_NAME}/o/${OBJECT_NAME}.lock"
+          export TF_HTTP_USERNAME="${{ secrets.OCI_S3_ACCESS_KEY }}"
+          export TF_HTTP_PASSWORD="${{ secrets.OCI_S3_SECRET_KEY }}"
           
           echo "Backend configuration:"
-          echo "Endpoint: $AWS_ENDPOINT_URL_S3"
-          echo "Bucket: terraform-state-${{ matrix.environment }}"
-          echo "Access Key ID: ${AWS_ACCESS_KEY_ID:0:8}..."
+          echo "Address: $TF_HTTP_ADDRESS"
+          echo "Username: ${TF_HTTP_USERNAME:0:8}..."
           
           # Export for subsequent steps
-          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
-          echo "AWS_ENDPOINT_URL_S3=$AWS_ENDPOINT_URL_S3" >> $GITHUB_ENV
+          echo "TF_HTTP_ADDRESS=$TF_HTTP_ADDRESS" >> $GITHUB_ENV
+          echo "TF_HTTP_LOCK_ADDRESS=$TF_HTTP_LOCK_ADDRESS" >> $GITHUB_ENV
+          echo "TF_HTTP_UNLOCK_ADDRESS=$TF_HTTP_UNLOCK_ADDRESS" >> $GITHUB_ENV
+          echo "TF_HTTP_USERNAME=$TF_HTTP_USERNAME" >> $GITHUB_ENV
+          echo "TF_HTTP_PASSWORD=$TF_HTTP_PASSWORD" >> $GITHUB_ENV
 
       - name: Terraform Init
         working-directory: terraform/environments/${{ matrix.environment }}

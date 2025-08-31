@@ -10,19 +10,15 @@ terraform {
   }
   required_version = ">= 1.5"
 
-  # Backend configuration for OCI Object Storage
-  # The endpoint and credentials will be configured via environment variables
-  backend "s3" {
-    bucket                      = "terraform-state-staging"
-    key                         = "k0s-cluster/terraform.tfstate"
-    region                      = "us-ashburn-1"
-    skip_region_validation      = true
-    skip_credentials_validation = true
-    skip_metadata_api_check     = true
-    use_path_style             = true
-    # endpoint will be set via AWS_ENDPOINT_URL_S3 environment variable
-    # access_key will be set via AWS_ACCESS_KEY_ID environment variable  
-    # secret_key will be set via AWS_SECRET_ACCESS_KEY environment variable
+  # Backend configuration for OCI Object Storage using HTTP backend
+  # This avoids AWS-specific logic that causes issues with OCI Object Storage
+  backend "http" {
+    # These will be set via environment variables in the workflow
+    # address will be set via TF_HTTP_ADDRESS
+    # lock_address will be set via TF_HTTP_LOCK_ADDRESS  
+    # unlock_address will be set via TF_HTTP_UNLOCK_ADDRESS
+    # username will be set via TF_HTTP_USERNAME
+    # password will be set via TF_HTTP_PASSWORD
   }
 }
 
