@@ -12,13 +12,13 @@ terraform {
   required_version = ">= 1.12.0"  # Require Terraform with OCI backend support
 
   # Backend configuration using OCI native backend
+  # Note: Variables cannot be used in backend blocks - must use literal values
   backend "oci" {
     bucket              = "terraform-state-staging"
-    namespace           = var.oci_namespace
     key                 = "k0s-cluster/terraform.tfstate"
-    region              = var.region
     auth                = "APIKey"
     config_file_profile = "DEFAULT"
+    # namespace and region will be set via environment variables or partial config
   }
 }
 
