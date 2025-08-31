@@ -95,13 +95,15 @@ jobs:
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
           # Configure S3-compatible backend for OCI Object Storage
-          export AWS_ACCESS_KEY_ID="${{ secrets.OCI_CLI_USER }}"
-          export AWS_SECRET_ACCESS_KEY="${{ secrets.OCI_CLI_KEY_CONTENT }}"
+          # Note: These should be Customer Secret Keys, not API keys
+          export AWS_ACCESS_KEY_ID="${{ secrets.OCI_S3_ACCESS_KEY }}"
+          export AWS_SECRET_ACCESS_KEY="${{ secrets.OCI_S3_SECRET_KEY }}"
           export AWS_S3_ENDPOINT="https://${{ secrets.OCI_NAMESPACE }}.compat.objectstorage.${{ secrets.OCI_CLI_REGION }}.oraclecloud.com"
           
           echo "Backend configuration:"
           echo "Endpoint: $AWS_S3_ENDPOINT"
           echo "Bucket: terraform-state-${{ matrix.environment }}"
+          echo "Access Key ID: ${AWS_ACCESS_KEY_ID:0:8}..."
           
           # Export for subsequent steps
           echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> $GITHUB_ENV
