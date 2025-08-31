@@ -10,15 +10,14 @@ terraform {
   }
   required_version = ">= 1.5"
 
-  # Backend configuration for OCI Object Storage using HTTP backend
-  # This avoids AWS-specific logic that causes issues with OCI Object Storage
-  backend "http" {
-    # These will be set via environment variables in the workflow
-    # address will be set via TF_HTTP_ADDRESS
-    # lock_address will be set via TF_HTTP_LOCK_ADDRESS  
-    # unlock_address will be set via TF_HTTP_UNLOCK_ADDRESS
-    # username will be set via TF_HTTP_USERNAME
-    # password will be set via TF_HTTP_PASSWORD
+  # Backend configuration using OCI native backend
+  backend "oci" {
+    bucket              = "terraform-state-staging"
+    namespace           = var.oci_namespace
+    key                 = "k0s-cluster/terraform.tfstate"
+    region              = var.region
+    auth                = "APIKey"
+    config_file_profile = "DEFAULT"
   }
 }
 

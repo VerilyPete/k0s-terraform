@@ -73,6 +73,7 @@ jobs:
           fingerprint        = "${{ secrets.OCI_CLI_FINGERPRINT }}"
           private_key_path   = "/home/runner/.oci/oci_api_key.pem"
           region             = "${{ secrets.OCI_CLI_REGION }}"
+          oci_namespace      = "${{ secrets.OCI_NAMESPACE }}"
           EOF
           
           # Add infrastructure configuration
@@ -91,32 +92,15 @@ jobs:
         working-directory: terraform/environments/${{ matrix.environment }}
         run: terraform fmt -check -recursive
 
-      - name: Configure OCI Object Storage Backend
+      - name: Backend Configuration Info
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
-          # Configure HTTP backend for OCI Object Storage
-          # This uses OCI Object Storage REST API directly, avoiding AWS-specific logic
-          BUCKET_NAME="terraform-state-${{ matrix.environment }}"
-          OBJECT_NAME="k0s-cluster/terraform.tfstate"
-          BASE_URL="https://${{ secrets.OCI_NAMESPACE }}.objectstorage.${{ secrets.OCI_CLI_REGION }}.oraclecloud.com"
-          
-          # Set HTTP backend environment variables
-          export TF_HTTP_ADDRESS="${BASE_URL}/n/${{ secrets.OCI_NAMESPACE }}/b/${BUCKET_NAME}/o/${OBJECT_NAME}"
-          export TF_HTTP_LOCK_ADDRESS="${BASE_URL}/n/${{ secrets.OCI_NAMESPACE }}/b/${BUCKET_NAME}/o/${OBJECT_NAME}.lock"
-          export TF_HTTP_UNLOCK_ADDRESS="${BASE_URL}/n/${{ secrets.OCI_NAMESPACE }}/b/${BUCKET_NAME}/o/${OBJECT_NAME}.lock"
-          export TF_HTTP_USERNAME="${{ secrets.OCI_S3_ACCESS_KEY }}"
-          export TF_HTTP_PASSWORD="${{ secrets.OCI_S3_SECRET_KEY }}"
-          
-          echo "Backend configuration:"
-          echo "Address: $TF_HTTP_ADDRESS"
-          echo "Username: ${TF_HTTP_USERNAME:0:8}..."
-          
-          # Export for subsequent steps
-          echo "TF_HTTP_ADDRESS=$TF_HTTP_ADDRESS" >> $GITHUB_ENV
-          echo "TF_HTTP_LOCK_ADDRESS=$TF_HTTP_LOCK_ADDRESS" >> $GITHUB_ENV
-          echo "TF_HTTP_UNLOCK_ADDRESS=$TF_HTTP_UNLOCK_ADDRESS" >> $GITHUB_ENV
-          echo "TF_HTTP_USERNAME=$TF_HTTP_USERNAME" >> $GITHUB_ENV
-          echo "TF_HTTP_PASSWORD=$TF_HTTP_PASSWORD" >> $GITHUB_ENV
+          echo "=== OCI Backend Configuration ==="
+          echo "Using OCI native backend for state management"
+          echo "Bucket: terraform-state-${{ matrix.environment }}"
+          echo "Namespace: ${{ secrets.OCI_NAMESPACE }}"
+          echo "Region: ${{ secrets.OCI_CLI_REGION }}"
+          echo "Key: k0s-cluster/terraform.tfstate"
 
       - name: Terraform Init
         working-directory: terraform/environments/${{ matrix.environment }}

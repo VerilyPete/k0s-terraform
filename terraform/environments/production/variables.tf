@@ -4,6 +4,11 @@ variable "tenancy_ocid" {
   type        = string
 }
 
+variable "oci_namespace" {
+  description = "OCI Object Storage namespace"
+  type        = string
+}
+
 variable "user_ocid" {
   description = "OCI user OCID"
   type        = string
