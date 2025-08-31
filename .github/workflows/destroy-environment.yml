@@ -76,20 +76,15 @@ jobs:
       - name: Create terraform.tfvars
         working-directory: terraform/environments/${{ github.event.inputs.environment }}
         run: |
-          # Create terraform.tfvars with private key content
-          cat > terraform.tfvars << 'TERRAFORM_EOF'
+          # Create terraform.tfvars with private key path
+          cat > terraform.tfvars << EOF
           # OCI Provider Configuration
           tenancy_ocid       = "${{ secrets.OCI_CLI_TENANCY }}"
           user_ocid          = "${{ secrets.OCI_CLI_USER }}"
           fingerprint        = "${{ secrets.OCI_CLI_FINGERPRINT }}"
+          private_key_path   = "/home/runner/.oci/oci_api_key.pem"
           region             = "${{ secrets.OCI_CLI_REGION }}"
-          TERRAFORM_EOF
-          
-          # Add private key content safely
-          echo "private_key = <<EOT" >> terraform.tfvars
-          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" >> terraform.tfvars
-          echo "EOT" >> terraform.tfvars
-          echo "" >> terraform.tfvars
+          EOF
           
           # Add infrastructure configuration
           cat >> terraform.tfvars << EOF

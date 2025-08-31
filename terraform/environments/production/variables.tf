@@ -14,8 +14,8 @@ variable "fingerprint" {
   type        = string
 }
 
-variable "private_key" {
-  description = "OCI API private key content"
+variable "private_key_path" {
+  description = "Path to OCI API private key file"
   type        = string
   sensitive   = true
 }
