@@ -3,6 +3,11 @@ variable "compartment_id" {
   type        = string
 }
 
+variable "tenancy_ocid" {
+  description = "OCI tenancy OCID"
+  type        = string
+}
+
 variable "availability_domain" {
   description = "OCI availability domain"
   type        = string

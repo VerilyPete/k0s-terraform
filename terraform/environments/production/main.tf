@@ -67,6 +67,7 @@ module "storage" {
   source = "../../modules/storage"
 
   compartment_id        = var.compartment_id
+  tenancy_ocid         = var.tenancy_ocid
   availability_domain   = var.availability_domain
   environment          = local.environment
   storage_volumes      = var.storage_volumes

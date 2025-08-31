@@ -1,10 +1,15 @@
-# Data source for default backup policies
+# Data source for default backup policies - try root compartment first
+data "oci_identity_tenancy" "current" {
+  tenancy_id = var.tenancy_ocid
+}
+
+# Look for backup policies in the tenancy root compartment
 data "oci_core_volume_backup_policies" "default_backup_policies" {
-  compartment_id = var.compartment_id
+  compartment_id = data.oci_identity_tenancy.current.id
 
   filter {
     name   = "display_name"
-    values = ["bronze"]
+    values = ["bronze", "Bronze", "silver", "Silver", "gold", "Gold"]
   }
 }
 
@@ -28,9 +33,9 @@ resource "oci_core_volume" "storage_volumes" {
   }
 }
 
-# Backup policy assignment (optional)
+# Backup policy assignment (optional) - only if backup policies are found
 resource "oci_core_volume_backup_policy_assignment" "backup_assignment" {
-  for_each = var.backup_policy_enabled ? var.storage_volumes : {}
+  for_each = var.backup_policy_enabled && length(data.oci_core_volume_backup_policies.default_backup_policies.volume_backup_policies) > 0 ? var.storage_volumes : {}
 
   asset_id  = oci_core_volume.storage_volumes[each.key].id
   policy_id = data.oci_core_volume_backup_policies.default_backup_policies.volume_backup_policies[0].id
