@@ -19,8 +19,9 @@ terraform {
     skip_region_validation      = true
     skip_credentials_validation = true
     skip_metadata_api_check     = true
-    force_path_style           = true
-    # endpoint will be set via AWS_S3_ENDPOINT environment variable
+    skip_requesting_account_id  = true
+    use_path_style             = true
+    # endpoint will be set via AWS_ENDPOINT_URL_S3 environment variable
     # access_key will be set via AWS_ACCESS_KEY_ID environment variable  
     # secret_key will be set via AWS_SECRET_ACCESS_KEY environment variable
   }
