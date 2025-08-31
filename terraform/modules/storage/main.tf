@@ -1,3 +1,8 @@
+# Data source for availability domains
+data "oci_identity_availability_domains" "ads" {
+  compartment_id = var.compartment_id
+}
+
 # Data source for default backup policies - try root compartment first
 data "oci_identity_tenancy" "current" {
   tenancy_id = var.tenancy_ocid
@@ -21,7 +26,10 @@ resource "oci_core_volume" "storage_volumes" {
   availability_domain = var.availability_domain
   display_name        = "${each.value.display_name}-${var.environment}"
   size_in_gbs         = each.value.size_gb
-
+  
+  # Ensure volume type is specified (default is usually iscsi)
+  vpus_per_gb = 10  # Default performance tier
+  
   freeform_tags = {
     "Environment" = var.environment
     "Purpose"     = each.value.description
