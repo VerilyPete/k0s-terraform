@@ -168,28 +168,23 @@ jobs:
             exit 1
           fi
 
-      - name: Configure OCI Backend Environment Variables
+      - name: OCI Backend Configuration Info
         working-directory: terraform/environments/${{ steps.env.outputs.environment }}
         run: |
-          # Set OCI backend configuration via environment variables
-          export OCI_namespace="${{ secrets.OCI_NAMESPACE }}"
-          export OCI_region="${{ secrets.OCI_CLI_REGION }}"
-          
           echo "=== OCI Backend Configuration ==="
           echo "Using OCI native backend for state management"
           echo "Bucket: terraform-state-${{ steps.env.outputs.environment }}"
-          echo "Namespace: $OCI_namespace"
-          echo "Region: $OCI_region"
+          echo "Namespace: ${{ secrets.OCI_NAMESPACE }}"
+          echo "Region: ${{ secrets.OCI_CLI_REGION }}"
           echo "Key: k0s-cluster/terraform.tfstate"
           echo "Auth: APIKey (using ~/.oci/config profile DEFAULT)"
-          
-          # Export for subsequent steps
-          echo "OCI_namespace=$OCI_namespace" >> $GITHUB_ENV
-          echo "OCI_region=$OCI_region" >> $GITHUB_ENV
 
       - name: Terraform Init
         working-directory: terraform/environments/${{ steps.env.outputs.environment }}
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="namespace=${{ secrets.OCI_NAMESPACE }}" \
+            -backend-config="region=${{ secrets.OCI_CLI_REGION }}"
 
       - name: Terraform Apply
         if: github.event.inputs.destroy != 'true'

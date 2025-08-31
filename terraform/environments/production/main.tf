@@ -13,12 +13,12 @@ terraform {
 
   # Backend configuration using OCI native backend
   # Note: Variables cannot be used in backend blocks - must use literal values
+  # Using partial configuration - namespace and region set via -backend-config
   backend "oci" {
     bucket              = "terraform-state-production"
     key                 = "k0s-cluster/terraform.tfstate"
     auth                = "APIKey"
     config_file_profile = "DEFAULT"
-    # namespace and region will be set via environment variables or partial config
   }
 }
 
