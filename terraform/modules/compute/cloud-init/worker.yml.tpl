@@ -40,20 +40,22 @@ write_files:
 
       echo "=== Installing Tailscale ==="
 
+      # Set hostname FIRST before Tailscale registration
+      echo "Setting hostname to: ${hostname}"
+      hostnamectl set-hostname ${hostname}
+      echo "${hostname}" > /etc/hostname
+
       # Install Tailscale
       curl -fsSL https://tailscale.com/install.sh | sh
 
-      # Start Tailscale
+      # Start Tailscale with the correct hostname and enable DNS
       echo "Starting Tailscale with hostname: ${hostname}"
-      sudo tailscale up --authkey="${tailscale_auth_key}" --hostname="${hostname}" --accept-dns=false
+      sudo tailscale up --authkey="${tailscale_auth_key}" --hostname="${hostname}" --accept-dns=true
 
       echo "=== Tailscale Installation Complete ==="
 
 runcmd:
-  # Set hostname
-  - hostnamectl set-hostname ${hostname}
-  - echo "${hostname}" > /etc/hostname
-
+  # Hostname is already set in the Tailscale script
   # Configure firewall for K0s
   - |
     echo "Configuring firewall for worker node..."

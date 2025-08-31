@@ -57,60 +57,49 @@ jobs:
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
           tailscale_auth_key: ${{ secrets.PRIVATE_TAILSCALE_KEY }}
 
-      - name: Wait for nodes to be accessible
+      - name: Wait for all nodes to be accessible
         run: |
-          echo "Waiting for cluster nodes to be accessible via Tailscale..."
-          
+          echo "⏳ Waiting for all nodes to be accessible via Tailscale..."
+
+          echo "Current Tailscale status:"
+          sudo tailscale status
+          echo ""
+
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          
-          # First, let's check Tailscale status and connectivity
-          echo "=== Tailscale Status ==="
-          sudo tailscale status || echo "Tailscale status check failed"
-          
-          echo "=== Checking Tailscale connectivity ==="
           for node in k8s-controller-$ENVIRONMENT k8s-worker-1-$ENVIRONMENT k8s-worker-2-$ENVIRONMENT; do
-            echo "Checking if $node is visible in Tailscale..."
-            if sudo tailscale status | grep -q "$node"; then
-              echo "✅ $node found in Tailscale network"
-            else
-              echo "⚠️  $node not found in Tailscale network"
-            fi
-            
-            echo "Testing ping to $node..."
-            if timeout 5 ping -c 1 "$node" >/dev/null 2>&1; then
-              echo "✅ $node is pingable"
-            else
-              echo "⚠️  $node is not pingable"
-            fi
-          done
-          
-          echo "=== Testing SSH connectivity ==="
-          for node in k8s-controller-$ENVIRONMENT k8s-worker-1-$ENVIRONMENT k8s-worker-2-$ENVIRONMENT; do
-            echo "Checking SSH to $node..."
-            for i in {1..30}; do
-              # More verbose SSH attempt with better error handling
-              if timeout 15 ssh -v -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@$node "echo 'Node ready: $(hostname)'" 2>/tmp/ssh_debug_$node.log; then
-                echo "✅ $node is accessible via SSH"
+            echo "🔍 Checking $node..."
+            MAX_ATTEMPTS=45
+            for i in $(seq 1 $MAX_ATTEMPTS); do
+              # First check if we can reach the node at all
+              if ! ping -c 1 -W 2 $node >/dev/null 2>&1; then
+                echo "  Attempt $i/$MAX_ATTEMPTS - $node not reachable via network, waiting 10s..."
+                sleep 10
+                continue
+              fi
+              
+              # Try SSH with timeout
+              if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes opc@$node "echo '✅ $node is ready'" >/dev/null 2>&1; then
+                echo "✅ $node is accessible"
                 break
               fi
               
-              if [ $i -eq 30 ]; then
-                echo "❌ Failed to connect to $node after 30 attempts"
-                echo "Last SSH debug output:"
-                cat /tmp/ssh_debug_$node.log || echo "No debug log available"
+              if [ $i -eq $MAX_ATTEMPTS ]; then
+                echo "❌ Failed to connect to $node after $MAX_ATTEMPTS attempts"
                 exit 1
               fi
               
-              echo "  Attempt $i/30 - SSH failed, waiting 15s..."
-              if [ $i -le 3 ]; then
-                echo "  Debug info for attempt $i:"
-                tail -5 /tmp/ssh_debug_$node.log 2>/dev/null || echo "  No debug info available"
+              # Show progress every 5 attempts
+              if [ $((i % 5)) -eq 0 ]; then
+                echo "  Attempt $i/$MAX_ATTEMPTS - SSH failed, checking port 22..."
+                timeout 3 nc -zv $node 22 2>/dev/null && echo "    Port 22 is open" || echo "    Port 22 not accessible yet"
               fi
-              sleep 15
+              
+              echo "  Attempt $i/$MAX_ATTEMPTS - waiting 10s..."
+              sleep 10
             done
           done
-          
-          echo "🎉 All nodes are accessible!"
+
+          echo "✅ All nodes are accessible"
 
       - name: Setup K8s cluster
         if: github.event.inputs.skip_cluster_setup != 'true'

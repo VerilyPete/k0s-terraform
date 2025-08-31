@@ -59,8 +59,8 @@ runs:
         # Install Tailscale CLI
         curl -fsSL https://tailscale.com/install.sh | sh
         
-        # Start Tailscale with auth key
-        sudo tailscale up --authkey="${{ inputs.tailscale_auth_key }}" --hostname="github-runner-$(date +%s)" --accept-dns=false
+        # Start Tailscale with auth key and enable DNS
+        sudo tailscale up --authkey="${{ inputs.tailscale_auth_key }}" --hostname="github-runner-$(date +%s)" --accept-dns=true
         
         # Wait for Tailscale to be ready
         for i in {1..30}; do
