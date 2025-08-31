@@ -2,13 +2,14 @@ terraform {
   required_providers {
     oci = {
       source  = "oracle/oci"
+      version = "~> 6.0"  # Pin to major version for stability
     }
     time = {
       source  = "hashicorp/time"
-      version = "~> 0.9"
+      version = "~> 0.12"  # Updated to modern version
     }
   }
-  required_version = ">= 1.5"
+  required_version = ">= 1.9.0"  # Require modern Terraform with OCI backend
 
   # Backend configuration using OCI native backend
   backend "oci" {
