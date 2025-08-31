@@ -99,6 +99,38 @@ jobs:
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
           EOF
 
+      - name: Clean up Tailscale entries before destroy
+        run: |
+          echo "🧹 Cleaning up Tailscale entries for environment: ${{ github.event.inputs.environment }}"
+          
+          # Define hostnames based on environment
+          HOSTNAMES=(
+            "k8s-controller-${{ github.event.inputs.environment }}"
+            "k8s-worker-1-${{ github.event.inputs.environment }}"
+            "k8s-worker-2-${{ github.event.inputs.environment }}"
+          )
+          
+          for hostname in "${HOSTNAMES[@]}"; do
+            echo "Removing $hostname from Tailscale..."
+
+            DEVICE_RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.TAILSCALE_API_KEY }}" \
+              "https://api.tailscale.com/api/v2/tailnet/-/devices")
+
+            nodeId=$(echo "$DEVICE_RESPONSE" | \
+              jq -r --arg hostname "$hostname" '.devices[] | select(.hostname == $hostname) | .nodeId // empty')
+
+            if [ -n "$nodeId" ] && [ "$nodeId" != "null" ]; then
+              curl -s -X DELETE \
+                -H "Authorization: Bearer ${{ secrets.TAILSCALE_API_KEY }}" \
+                "https://api.tailscale.com/api/v2/device/$nodeId"
+              echo "✅ Removed $hostname from Tailscale"
+            else
+              echo "ℹ️  $hostname not found in Tailscale (already clean)"
+            fi
+          done
+
+          echo "🎉 Tailscale cleanup complete"
+
       - name: OCI Backend Configuration Info
         working-directory: terraform/environments/${{ github.event.inputs.environment }}
         run: |
