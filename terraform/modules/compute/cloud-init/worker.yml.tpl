@@ -3,6 +3,10 @@ package_update: true
 package_upgrade: false
 package_reboot_if_required: false
 
+# Set hostname properly using cloud-init
+hostname: ${hostname}
+preserve_hostname: true
+
 packages:
   - git
   - curl
@@ -103,18 +107,13 @@ write_files:
       echo "=== Tailscale Installation Complete ==="
 
 runcmd:
-  # Set hostname first and make it persistent
+  # Verify hostname was set correctly by cloud-init
   - |
-    echo "Setting hostname to: ${hostname}"
-    echo "Current hostname before change: $(hostname)"
-    hostnamectl set-hostname ${hostname}
-    echo "${hostname}" > /etc/hostname
-    echo "Hostname set to: $(hostname)"
+    echo "Verifying hostname configuration..."
+    echo "Current hostname: $(hostname)"
+    echo "Expected hostname: ${hostname}"
     
-    # Disable cloud-init hostname module to prevent overrides
-    echo "preserve_hostname: true" > /etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg
-    
-    # Disable NetworkManager hostname setting
+    # Disable NetworkManager hostname setting to prevent future overrides
     if [ -f /etc/NetworkManager/NetworkManager.conf ]; then
       echo -e "\n[main]\nhostname-mode=none" >> /etc/NetworkManager/NetworkManager.conf
       systemctl restart NetworkManager || true
