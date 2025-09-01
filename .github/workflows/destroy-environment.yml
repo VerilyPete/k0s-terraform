@@ -96,9 +96,15 @@ jobs:
           vcn_id             = "${{ secrets.OCI_VCN_ID }}"
           image_id           = "${{ secrets.OCI_CUSTOM_IMAGE }}"
           ssh_public_key     = "${{ secrets.SSH_PUBLIC_KEY }}"
-          ssh_private_key    = "${{ secrets.SSH_PRIVATE_KEY }}"
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
           EOF
+          
+          # Add SSH private key using heredoc syntax to handle multi-line content
+          cat >> terraform.tfvars << 'SSHKEY'
+          ssh_private_key = <<EOT
+          ${{ secrets.SSH_PRIVATE_KEY }}
+          EOT
+          SSHKEY
 
       - name: Clean up Tailscale entries before destroy
         run: |
