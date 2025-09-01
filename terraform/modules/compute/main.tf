@@ -200,7 +200,7 @@ resource "null_resource" "join_workers" {
       type        = "ssh"
       user        = "opc"
       private_key = var.ssh_private_key
-      host        = each.value.hostname
+      host        = each.value.private_ip
     }
   }
 }
