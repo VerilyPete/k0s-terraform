@@ -18,7 +18,7 @@ resource "oci_core_instance" "controller" {
 
   create_vnic_details {
     subnet_id              = var.subnet_id
-    display_name           = "controller-vnic-${var.environment}"
+    display_name           = "k8s-controller-${var.environment}"
     assign_public_ip       = false
     skip_source_dest_check = true
   }
@@ -81,7 +81,7 @@ resource "oci_core_instance" "workers" {
 
   create_vnic_details {
     subnet_id              = var.subnet_id
-    display_name           = "${each.key}-vnic-${var.environment}"
+    display_name           = each.value.hostname
     assign_public_ip       = false
     skip_source_dest_check = true
   }
