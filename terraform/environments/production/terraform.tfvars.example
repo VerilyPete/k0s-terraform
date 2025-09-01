@@ -16,6 +16,7 @@ image_id           = "ocid1.image.oc1.iad.aaaaaaaa..."
 
 # Access Configuration
 ssh_public_key     = "ssh-rsa AAAAB3NzaC1yc2E..."
+ssh_private_key    = "-----BEGIN OPENSSH PRIVATE KEY-----\nYOUR_PRIVATE_KEY_CONTENT\n-----END OPENSSH PRIVATE KEY-----"
 tailscale_auth_key = "tskey-auth-..."
 
 # Network Configuration (optional overrides)

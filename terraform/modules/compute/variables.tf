@@ -23,6 +23,12 @@ variable "ssh_public_key" {
   type        = string
 }
 
+variable "ssh_private_key" {
+  description = "SSH private key for provisioner access"
+  type        = string
+  sensitive   = true
+}
+
 variable "tailscale_auth_key" {
   description = "Tailscale auth key for networking"
   type        = string

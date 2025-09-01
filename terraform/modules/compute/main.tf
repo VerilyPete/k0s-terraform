@@ -130,5 +130,77 @@ resource "time_sleep" "wait_for_instances" {
     oci_core_volume_attachment.worker_storage
   ]
 
-  create_duration = "30s"
+  create_duration = "60s"
+}
+
+# Join workers to the cluster
+resource "null_resource" "join_workers" {
+  for_each = oci_core_instance.workers
+  
+  depends_on = [time_sleep.wait_for_instances]
+
+  # Trigger re-run if worker instance changes
+  triggers = {
+    worker_id     = each.value.id
+    controller_id = oci_core_instance.controller.id
+  }
+
+  # Get join token from controller and join worker
+  provisioner "remote-exec" {
+    inline = [
+      "echo 'Waiting for controller to be ready...'",
+      "for i in {1..24}; do",
+      "  if sudo k0s kubectl get nodes >/dev/null 2>&1; then",
+      "    echo 'Controller is ready!'",
+      "    break",
+      "  fi",
+      "  if [ $i -eq 24 ]; then",
+      "    echo 'Controller not ready after 4 minutes'",
+      "    exit 1",
+      "  fi",
+      "  echo 'Waiting for controller... attempt $i/24'",
+      "  sleep 10",
+      "done",
+      "",
+      "echo 'Getting join token from controller...'",
+      "JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@k8s-controller-${var.environment} 'sudo cat /tmp/worker-token.txt')",
+      "",
+      "if [ -z \"$JOIN_TOKEN\" ]; then",
+      "  echo 'Failed to get join token'",
+      "  exit 1",
+      "fi",
+      "",
+      "echo 'Joining worker to cluster...'",
+      "echo \"$JOIN_TOKEN\" | sudo tee /tmp/join-token.txt > /dev/null",
+      "sudo k0s install worker --token-file /tmp/join-token.txt",
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable k0sworker",
+      "sudo systemctl start k0sworker",
+      "",
+      "echo 'Waiting for worker service to be active...'",
+      "for i in {1..12}; do",
+      "  if systemctl is-active --quiet k0sworker; then",
+      "    echo 'Worker service is active!'",
+      "    break",
+      "  fi",
+      "  if [ $i -eq 12 ]; then",
+      "    echo 'Worker service failed to start'",
+      "    sudo systemctl status k0sworker --no-pager -l",
+      "    exit 1",
+      "  fi",
+      "  echo 'Waiting for worker service... attempt $i/12'",
+      "  sleep 5",
+      "done",
+      "",
+      "sudo rm -f /tmp/join-token.txt",
+      "echo 'Worker joined successfully!'"
+    ]
+
+    connection {
+      type        = "ssh"
+      user        = "opc"
+      private_key = var.ssh_private_key
+      host        = each.value.hostname
+    }
+  }
 }
