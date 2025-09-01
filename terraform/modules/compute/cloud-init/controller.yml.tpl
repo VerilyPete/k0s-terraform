@@ -4,7 +4,9 @@ package_upgrade: false
 package_reboot_if_required: false
 
 # Set hostname properly using cloud-init
+echo  "1st check Current hostname: $(hostname)"
 hostname: ${hostname}
+echo "Expected hostname: ${hostname}"
 preserve_hostname: true
 
 packages:
