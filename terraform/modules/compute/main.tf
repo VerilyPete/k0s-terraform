@@ -25,6 +25,8 @@ resource "oci_core_instance" "controller" {
 
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
+    HOSTNAME           = "k8s-controller-${var.environment}"
+    TAILSCALE_AUTH_KEY = var.tailscale_auth_key
     user_data = base64encode(templatefile("${path.module}/cloud-init/controller.yml.tpl", {
       hostname           = "k8s-controller-${var.environment}"
       tailscale_auth_key = var.tailscale_auth_key

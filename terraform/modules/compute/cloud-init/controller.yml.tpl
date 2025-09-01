@@ -193,8 +193,10 @@ runcmd:
   # Set hostname first and make it persistent
   - |
     echo "Setting hostname to: ${hostname}"
+    echo "Current hostname before change: $(hostname)"
     hostnamectl set-hostname ${hostname}
     echo "${hostname}" > /etc/hostname
+    echo "Hostname set to: $(hostname)"
     
     # Disable cloud-init hostname module to prevent overrides
     echo "preserve_hostname: true" > /etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg
@@ -204,25 +206,6 @@ runcmd:
       echo -e "\n[main]\nhostname-mode=none" >> /etc/NetworkManager/NetworkManager.conf
       systemctl restart NetworkManager || true
     fi
-    
-    # Create a systemd service to enforce hostname on boot
-    cat > /etc/systemd/system/enforce-hostname.service << EOF
-    [Unit]
-    Description=Enforce custom hostname
-    After=network.target
-    
-    [Service]
-    Type=oneshot
-    ExecStart=/bin/hostnamectl set-hostname ${hostname}
-    ExecStart=/bin/bash -c 'echo "${hostname}" > /etc/hostname'
-    RemainAfterExit=yes
-    
-    [Install]
-    WantedBy=multi-user.target
-    EOF
-    
-    systemctl enable enforce-hostname.service
-    systemctl start enforce-hostname.service
 
   # Setup Tailscale for connectivity
   - |
@@ -265,9 +248,6 @@ runcmd:
       
       sudo firewall-cmd --reload
     fi
-
-  # Setup Tailscale
-  - /usr/local/bin/install-tailscale.sh
 
   # Wait for Tailscale to be ready
   - |
