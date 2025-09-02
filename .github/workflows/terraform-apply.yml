@@ -21,6 +21,11 @@ on:
         required: false
         default: false
         type: boolean
+      force_rebuild:
+        description: 'Force complete cluster rebuild (taint all instances)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -187,13 +192,136 @@ jobs:
             -backend-config="namespace=${{ secrets.OCI_NAMESPACE }}" \
             -backend-config="region=${{ secrets.OCI_CLI_REGION }}"
 
-      - name: Terraform Apply
+      - name: Check for tainted instances and cluster state
         if: github.event.inputs.destroy != 'true'
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        id: taint_check
+        run: |
+          echo "🔍 Checking terraform state for tainted instances..."
+          
+          # Check for forced rebuild option
+          if [ "${{ github.event.inputs.force_rebuild }}" == "true" ]; then
+            echo "🔄 Force rebuild requested by user"
+            echo "tainted=true" >> $GITHUB_OUTPUT
+          else
+            # Check for tainted resources
+            TAINTED_RESOURCES=$(terraform state list | xargs -I {} terraform state show {} | grep -l "tainted = true" || true)
+            
+            if [ -n "$TAINTED_RESOURCES" ]; then
+              echo "⚠️  Found tainted resources:"
+              echo "$TAINTED_RESOURCES"
+              echo "tainted=true" >> $GITHUB_OUTPUT
+            else
+              echo "✅ No tainted resources found"
+              echo "tainted=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+          
+          # Check current state for any instances
+          echo ""
+          echo "📊 Current infrastructure state:"
+          terraform state list | grep -E "(controller|worker)" || echo "No instances found"
+          
+          # Get plan to see what changes are needed
+          echo ""
+          echo "📋 Checking terraform plan..."
+          terraform plan -detailed-exitcode -no-color > plan_output.txt 2>&1
+          PLAN_EXIT_CODE=$?
+          
+          case $PLAN_EXIT_CODE in
+            0)
+              echo "✅ No changes needed - infrastructure is up to date"
+              echo "needs_apply=false" >> $GITHUB_OUTPUT
+              ;;
+            1)
+              echo "❌ Terraform plan failed"
+              cat plan_output.txt
+              exit 1
+              ;;
+            2)
+              echo "📝 Changes detected - terraform apply needed"
+              echo "needs_apply=true" >> $GITHUB_OUTPUT
+              
+              # Check if plan shows instance replacements
+              if grep -q "must be replaced" plan_output.txt; then
+                echo "⚠️  Plan shows instance replacements - this indicates tainted or incompatible instances"
+                echo "tainted=true" >> $GITHUB_OUTPUT
+              fi
+              ;;
+          esac
+
+      - name: Force destroy all instances if any are tainted
+        if: github.event.inputs.destroy != 'true' && steps.taint_check.outputs.tainted == 'true'
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: |
+          echo "🗑️  Tainted instances detected - forcing complete cluster rebuild for consistency"
+          echo "⚠️   This ensures all instances have properly functioning cloud-init and k0s setup"
+          echo ""
+          
+          # Clean up Tailscale entries first
+          echo "🧹 Cleaning up Tailscale entries before rebuild..."
+          
+          # Get all devices from Tailscale API
+          DEVICE_RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.TAILSCALE_API_KEY }}" \
+            "https://api.tailscale.com/api/v2/tailnet/-/devices" 2>/dev/null)
+
+          if [ -n "$DEVICE_RESPONSE" ] && [ "$DEVICE_RESPONSE" != "null" ]; then
+            # Extract all devices that match our patterns
+            DEVICES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
+              if .devices then 
+                .devices[] | select(
+                  (.hostname | test("k8s-controller-staging")) or
+                  (.hostname | test("k8s-worker-[0-9]+-staging")) or
+                  (.hostname | test("^k8s-controller-${{ steps.env.outputs.environment }}")) or
+                  (.hostname | test("^k8s-worker-[0-9]+-${{ steps.env.outputs.environment }}"))
+                ) | {hostname: .hostname, nodeId: .nodeId}
+              else 
+                empty 
+              end' 2>/dev/null)
+
+            if [ -n "$DEVICES_TO_DELETE" ]; then
+              # Parse devices into arrays
+              DEVICE_HOSTNAMES=($(echo "$DEVICES_TO_DELETE" | jq -r '.hostname' 2>/dev/null))
+              DEVICE_NODEIDS=($(echo "$DEVICES_TO_DELETE" | jq -r '.nodeId' 2>/dev/null))
+
+              echo "Found ${#DEVICE_HOSTNAMES[@]} Tailscale devices to remove before rebuild"
+              
+              for i in "${!DEVICE_HOSTNAMES[@]}"; do
+                hostname="${DEVICE_HOSTNAMES[$i]}"
+                nodeId="${DEVICE_NODEIDS[$i]}"
+                
+                if [ -n "$nodeId" ] && [ "$nodeId" != "null" ]; then
+                  curl -s -X DELETE \
+                    -H "Authorization: Bearer ${{ secrets.TAILSCALE_API_KEY }}" \
+                    "https://api.tailscale.com/api/v2/device/$nodeId" >/dev/null
+                  echo "  ✅ Removed $hostname"
+                fi
+              done
+            fi
+          fi
+          
+          echo ""
+          echo "🗑️  Destroying all instances for clean rebuild..."
+          terraform destroy -auto-approve
+          
+          echo "✅ Clean destroy completed - ready for fresh apply"
+
+      - name: Terraform Apply
+        if: github.event.inputs.destroy != 'true' && (steps.taint_check.outputs.needs_apply == 'true' || steps.taint_check.outputs.tainted == 'true')
         working-directory: terraform/environments/${{ steps.env.outputs.environment }}
         id: apply
         run: |
+          echo "🚀 Applying terraform configuration..."
           terraform apply -auto-approve
           terraform output -json > outputs.json
+          
+          echo "✅ Infrastructure deployment completed"
+
+      - name: Skip apply - no changes needed
+        if: github.event.inputs.destroy != 'true' && steps.taint_check.outputs.needs_apply == 'false' && steps.taint_check.outputs.tainted == 'false'
+        run: |
+          echo "ℹ️  Infrastructure is already up to date - skipping apply"
+          echo "✅ No changes needed"
 
       - name: Clean up Tailscale entries before destroy
         if: github.event.inputs.destroy == 'true'
@@ -319,33 +447,63 @@ jobs:
         run: terraform destroy -auto-approve
 
       - name: Parse Terraform Outputs
-        if: github.event.inputs.destroy != 'true'
+        if: github.event.inputs.destroy != 'true' && (steps.taint_check.outputs.needs_apply == 'true' || steps.taint_check.outputs.tainted == 'true')
         id: outputs
         working-directory: terraform/environments/${{ steps.env.outputs.environment }}
         run: |
-          CONTROLLER_IP=$(jq -r '.cluster_info.value.controller.private_ip' outputs.json)
-          CONTROLLER_HOSTNAME=$(jq -r '.cluster_info.value.controller.hostname' outputs.json)
-          
-          echo "controller_ip=$CONTROLLER_IP" >> $GITHUB_OUTPUT
-          echo "controller_hostname=$CONTROLLER_HOSTNAME" >> $GITHUB_OUTPUT
-          echo "environment=${{ steps.env.outputs.environment }}" >> $GITHUB_OUTPUT
+          if [ -f outputs.json ]; then
+            CONTROLLER_IP=$(jq -r '.cluster_info.value.controller.private_ip' outputs.json)
+            CONTROLLER_HOSTNAME=$(jq -r '.cluster_info.value.controller.hostname' outputs.json)
+            
+            echo "controller_ip=$CONTROLLER_IP" >> $GITHUB_OUTPUT
+            echo "controller_hostname=$CONTROLLER_HOSTNAME" >> $GITHUB_OUTPUT
+            echo "environment=${{ steps.env.outputs.environment }}" >> $GITHUB_OUTPUT
+            
+            echo "✅ Parsed terraform outputs:"
+            echo "  Controller IP: $CONTROLLER_IP"
+            echo "  Controller Hostname: $CONTROLLER_HOSTNAME"
+            echo "  Environment: ${{ steps.env.outputs.environment }}"
+          else
+            echo "❌ outputs.json not found - this shouldn't happen after apply"
+            exit 1
+          fi
 
       - name: Terraform Apply Summary
         if: github.event.inputs.destroy != 'true'
         run: |
           echo "============================================="
-          echo "Terraform Apply Complete - ${{ steps.env.outputs.environment }}"
-          echo "============================================="
-          echo ""
-          echo "Controller: ${{ steps.outputs.outputs.controller_hostname }}"
-          echo "Private IP: ${{ steps.outputs.outputs.controller_ip }}"
-          echo ""
-          echo "Next: K8s cluster setup and application deployment will run in separate job"
+          
+          if [[ "${{ steps.taint_check.outputs.needs_apply }}" == "true" || "${{ steps.taint_check.outputs.tainted }}" == "true" ]]; then
+            if [[ "${{ steps.taint_check.outputs.tainted }}" == "true" ]]; then
+              echo "🔄 Terraform Complete (Clean Rebuild) - ${{ steps.env.outputs.environment }}"
+              echo "============================================="
+              echo ""
+              echo "⚠️  Tainted instances were detected and rebuilt"
+              echo "✅ All instances now have clean cloud-init setup"
+            else
+              echo "🎉 Terraform Apply Complete - ${{ steps.env.outputs.environment }}"
+              echo "============================================="
+              echo ""
+              echo "✅ Infrastructure changes applied successfully"
+            fi
+            echo ""
+            echo "Controller: ${{ steps.outputs.outputs.controller_hostname }}"
+            echo "Private IP: ${{ steps.outputs.outputs.controller_ip }}"
+            echo ""
+            echo "Next: K8s cluster setup and application deployment will run in separate job"
+          else
+            echo "ℹ️  Infrastructure Status Check Complete - ${{ steps.env.outputs.environment }}"
+            echo "============================================="
+            echo ""
+            echo "✅ Infrastructure is already up to date"
+            echo ""
+            echo "Next: Infrastructure is ready for k8s deployment if needed"
+          fi
           echo "============================================="
 
-  # Call the K8s deployment workflow
+  # Call the K8s deployment workflow only if infrastructure was applied/changed
   k8s-deployment:
-    if: github.event.inputs.destroy != 'true'
+    if: github.event.inputs.destroy != 'true' && needs.terraform-apply.outputs.controller_ip != ''
     needs: terraform-apply
     uses: ./.github/workflows/k8s-deploy.yml
     with:
