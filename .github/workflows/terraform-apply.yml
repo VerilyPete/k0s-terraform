@@ -220,7 +220,14 @@ jobs:
           # Check current state for any instances
           echo ""
           echo "📊 Current infrastructure state:"
-          terraform state list | grep -E "(controller|worker)" || echo "No instances found"
+          EXISTING_INSTANCES=$(terraform state list | grep -E "(controller|worker)" || true)
+          if [ -n "$EXISTING_INSTANCES" ]; then
+            echo "$EXISTING_INSTANCES"
+            INFRASTRUCTURE_EXISTS=true
+          else
+            echo "No instances found"
+            INFRASTRUCTURE_EXISTS=false
+          fi
           
           # Get plan to see what changes are needed
           echo ""
@@ -230,8 +237,25 @@ jobs:
           
           case $PLAN_EXIT_CODE in
             0)
-              echo "✅ No changes needed - infrastructure is up to date"
-              echo "needs_apply=false" >> $GITHUB_OUTPUT
+              if [ "$INFRASTRUCTURE_EXISTS" = "false" ]; then
+                echo "⚠️  No infrastructure exists but plan shows no changes - this may indicate a configuration issue"
+                echo ""
+                echo "🔍 Debugging terraform state and configuration:"
+                echo "State file status:"
+                terraform state list || echo "No state found"
+                echo ""
+                echo "📋 Full plan output:"
+                cat plan_output.txt
+                echo ""
+                echo "🔧 Terraform configuration check:"
+                find . -name "*.tf" -exec echo "File: {}" \; -exec head -5 {} \;
+                echo ""
+                echo "🔄 Forcing apply since no infrastructure exists"
+                echo "needs_apply=true" >> $GITHUB_OUTPUT
+              else
+                echo "✅ No changes needed - infrastructure is up to date"
+                echo "needs_apply=false" >> $GITHUB_OUTPUT
+              fi
               ;;
             1)
               echo "❌ Terraform plan failed"
@@ -242,8 +266,18 @@ jobs:
               echo "📝 Changes detected - terraform apply needed"
               echo "needs_apply=true" >> $GITHUB_OUTPUT
               
+              # Count resources to be created vs modified/destroyed
+              RESOURCES_TO_CREATE=$(grep -c "will be created" plan_output.txt || echo "0")
+              RESOURCES_TO_REPLACE=$(grep -c "must be replaced" plan_output.txt || echo "0")
+              RESOURCES_TO_DESTROY=$(grep -c "will be destroyed" plan_output.txt || echo "0")
+              
+              echo "  📊 Plan summary:"
+              echo "    - Resources to create: $RESOURCES_TO_CREATE"
+              echo "    - Resources to replace: $RESOURCES_TO_REPLACE"
+              echo "    - Resources to destroy: $RESOURCES_TO_DESTROY"
+              
               # Check if plan shows instance replacements
-              if grep -q "must be replaced" plan_output.txt; then
+              if [ "$RESOURCES_TO_REPLACE" -gt "0" ]; then
                 echo "⚠️  Plan shows instance replacements - this indicates tainted or incompatible instances"
                 echo "tainted=true" >> $GITHUB_OUTPUT
               fi
