@@ -120,7 +120,6 @@ jobs:
           HOSTNAMES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
             if .devices then 
               .devices[] | select(
-                (.hostname | test("^github-runner")) or
                 (.hostname | test("^k8s-controller-staging")) or
                 (.hostname | test("^k8s-worker-[0-9]+-staging"))
               ) | .hostname
