@@ -444,7 +444,7 @@ jobs:
             # Deploy webserver application
             echo "Deploying webserver application..."
             helm upgrade --install webserver ./webserver \\
-              --namespace webserver --create-namespace \\
+              --namespace webserver \\
               --values ./webserver/values-$ENVIRONMENT.yaml \\
               --wait --timeout=300s
 
