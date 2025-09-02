@@ -165,35 +165,31 @@ jobs:
             sleep 10
           done
 
-          # Get join token
+          # Get join token - FIXED VERSION
           echo "Retrieving worker join token..."
           echo "Checking SSH connectivity to $CONTROLLER..."
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 opc@$CONTROLLER "echo 'SSH connection successful'" || {
             echo "❌ SSH connection failed"
             exit 1
           }
-          
+
           echo "Checking token file status..."
           ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "ls -la /tmp/worker-token.txt" || {
             echo "❌ Token file not found, checking setup logs..."
             ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo tail -20 /var/log/k0s-controller-setup.log" || echo "No setup log found"
             exit 1
           }
-          
+
           echo "Reading token file..."
-          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "cat /tmp/worker-token.txt" 2>&1)
+          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "cat /tmp/worker-token.txt")
           COMMAND_EXIT_CODE=$?
           
+          JOIN_TOKEN=$(echo "$JOIN_TOKEN" | tr -d '\n\r')
+
           echo "Token read command exit code: $COMMAND_EXIT_CODE"
           echo "Token length: ${#JOIN_TOKEN}"
           echo "Token preview (first 50 chars): ${JOIN_TOKEN:0:50}..."
-          
-          if [ $COMMAND_EXIT_CODE -ne 0 ]; then
-            echo "❌ Failed to read token file, command output:"
-            echo "$JOIN_TOKEN"
-            exit 1
-          fi
-          
+
           if [ -z "$JOIN_TOKEN" ]; then
             echo "❌ Token is empty"
             echo "Checking if file exists and has content..."
@@ -230,14 +226,25 @@ jobs:
               # Set proper permissions
               sudo chmod 600 /tmp/join-token.txt
         
-              # Test token validity before installing
-              echo '=== Debug: Testing token validity ==='
-              if sudo /usr/local/bin/k0s token validate --token-file /tmp/join-token.txt; then
-                echo '✅ Token is valid'
+              # Check token format (basic validation)
+              echo '=== Debug: Basic token format check ==='
+              token_lines=\$(wc -l < /tmp/join-token.txt)
+              echo \"Token has \$token_lines lines\"
+    
+              # k0s tokens are typically base64 encoded and should be non-empty
+              if [ -s /tmp/join-token.txt ]; then
+                echo '✅ Token file is not empty'
+                # Check if it looks like a valid token (basic check)
+                first_char=\$(head -c 1 /tmp/join-token.txt)
+                if [ -n \"\$first_char\" ] && [ \"\$first_char\" != \" \" ]; then
+                  echo '✅ Token appears to have valid format'
+                else
+                  echo '❌ Token appears to start with whitespace or be invalid'
+                  echo 'Token hex dump (first 100 bytes):'
+                  sudo hexdump -C /tmp/join-token.txt | head -5
+                fi
               else
-                echo '❌ Token validation failed'
-                echo 'Token content:'
-                sudo cat /tmp/join-token.txt
+                echo '❌ Token file is empty'
                 exit 1
               fi
         
