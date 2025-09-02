@@ -135,22 +135,44 @@ resource "time_sleep" "wait_for_instances" {
 
 # Join workers to the cluster using terraform_data (modern replacement for null_resource)
 resource "terraform_data" "join_workers" {
-  for_each = oci_core_instance.workers
+  for_each = {
+    "worker-1" = {
+      hostname = "k8s-worker-1-${var.environment}"
+      instance = oci_core_instance.workers["worker-1"]
+    }
+    "worker-2" = {
+      hostname = "k8s-worker-2-${var.environment}"
+      instance = oci_core_instance.workers["worker-2"]
+    }
+  }
   
   depends_on = [time_sleep.wait_for_instances]
 
   # Trigger re-run if worker instance changes
   triggers_replace = {
-    worker_id     = each.value.id
+    worker_id     = each.value.instance.id
     controller_id = oci_core_instance.controller.id
   }
 
   # Get join token from controller and join worker
   provisioner "remote-exec" {
     inline = [
+      "echo 'Waiting for Tailscale to be ready...'",
+      "for i in {1..30}; do",
+      "  if tailscale status >/dev/null 2>&1; then",
+      "    echo 'Tailscale is connected!'",
+      "    break",
+      "  fi",
+      "  if [ $i -eq 30 ]; then",
+      "    echo 'Tailscale not ready after 5 minutes'",
+      "    exit 1",
+      "  fi",
+      "  echo 'Waiting for Tailscale... attempt $i/30'",
+      "  sleep 10",
+      "done",
       "echo 'Waiting for controller to be ready...'",
       "for i in {1..24}; do",
-      "  if sudo k0s kubectl get nodes >/dev/null 2>&1; then",
+      "  if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 opc@k8s-controller-${var.environment} 'sudo k0s kubectl get nodes' >/dev/null 2>&1; then",
       "    echo 'Controller is ready!'",
       "    break",
       "  fi",
@@ -162,7 +184,7 @@ resource "terraform_data" "join_workers" {
       "  sleep 10",
       "done",
       "echo 'Getting join token from controller...'",
-      "JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@k8s-controller-${var.environment} 'sudo cat /tmp/worker-token.txt')",
+      "JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 opc@k8s-controller-${var.environment} 'sudo cat /tmp/worker-token.txt')",
       "if [ -z \"$JOIN_TOKEN\" ]; then",
       "  echo 'Failed to get join token'",
       "  exit 1",
@@ -195,7 +217,9 @@ resource "terraform_data" "join_workers" {
       type        = "ssh"
       user        = "opc"
       private_key = var.ssh_private_key
-      host        = each.value.private_ip
+      host        = each.value.hostname
+      timeout     = "15m"
+      agent       = false
     }
   }
 }
