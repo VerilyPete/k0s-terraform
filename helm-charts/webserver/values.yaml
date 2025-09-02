@@ -78,8 +78,7 @@ namespace:
   name: webserver
 
 # Additional namespaces to create
-additionalNamespaces:
-  - cloudflare-tunnel
+additionalNamespaces: []
 
 nodeSelector: {}
 tolerations: []
