@@ -27,20 +27,32 @@ write_files:
       #!/bin/bash
       set -euo pipefail
 
-      echo "=== Starting K0s Controller Setup ==="
+      # Setup comprehensive logging
+      LOG_FILE="/var/log/k0s-controller-setup.log"
+      exec 1> >(tee -a "$LOG_FILE")
+      exec 2> >(tee -a "$LOG_FILE" >&2)
+
+      echo "=== Starting K0s Controller Setup at $(date) ==="
+      echo "Environment: ${environment}"
+      echo "Hostname: $(hostname)"
+      echo "IP Address: $(hostname -I)"
 
       # Download and install k0s
       echo "Downloading k0s..."
       curl -sSLf https://get.k0s.sh | sudo sh
+      echo "K0s installation completed. Version: $(k0s version || echo 'Failed to get version')"
 
       # Create k0s configuration directory
+      echo "Creating k0s configuration directory..."
       mkdir -p /etc/k0s
 
       # Get the primary IP address for binding
       PRIMARY_IP=$(hostname -I | awk '{print $1}')
       echo "Using primary IP for K0s API: $PRIMARY_IP"
+      echo "Full IP list: $(hostname -I)"
       
       # Create k0s config with environment-specific settings
+      echo "Creating k0s configuration file..."
       cat > /etc/k0s/k0s.yaml <<EOCONFIG
       apiVersion: k0s.k0sproject.io/v1beta1
       kind: ClusterConfig
@@ -63,55 +75,82 @@ write_files:
             create_default_storage_class: true
       EOCONFIG
 
+      echo "K0s configuration file created:"
+      cat /etc/k0s/k0s.yaml
+
       # Install k0s as controller
       echo "Installing k0s controller..."
       k0s install controller --config /etc/k0s/k0s.yaml
+      echo "K0s controller installation completed"
 
       # Start k0s
       echo "Starting k0s..."
       systemctl daemon-reload
       systemctl enable k0scontroller
       systemctl start k0scontroller
+      echo "K0s controller service started"
+
+      # Check initial service status
+      echo "Initial service status:"
+      systemctl status k0scontroller --no-pager -l || true
 
       # Wait for k0s to be ready
       echo "Waiting for k0s to be ready..."
       for i in {1..24}; do
+        echo "Attempt $i/24: Checking k0s kubectl..."
         if k0s kubectl get nodes 2>/dev/null; then
           echo "K0s API server is ready!"
           break
         fi
-        echo "Waiting for API server... (attempt $i/24)"
+        echo "API server not ready yet, checking service status..."
+        systemctl status k0scontroller --no-pager -l || true
+        echo "Checking logs..."
+        journalctl -u k0scontroller --no-pager -l --since="5 minutes ago" | tail -10 || true
         sleep 5
       done
       
       # Verify API server is responding
+      echo "Final verification of API server..."
       if ! k0s kubectl get nodes 2>/dev/null; then
         echo "ERROR: K0s API server failed to start properly"
-        systemctl status k0scontroller --no-pager -l
+        echo "=== Service Status ==="
+        systemctl status k0scontroller --no-pager -l || true
+        echo "=== Recent Logs ==="
+        journalctl -u k0scontroller --no-pager -l --since="10 minutes ago" || true
+        echo "=== Configuration File ==="
+        cat /etc/k0s/k0s.yaml || true
         exit 1
       fi
+
+      echo "API server verification successful"
 
       # Create worker join tokens
       echo "Creating worker join tokens..."
       k0s token create --role=worker --expiry=48h > /tmp/worker-token.txt
+      echo "Worker token created. Token length: $(cat /tmp/worker-token.txt | wc -c)"
+      echo "Token preview: $(cat /tmp/worker-token.txt | head -c 50)..."
 
       # Setup kubectl for opc user
       echo "Setting up kubectl for opc user..."
       mkdir -p /home/opc/.kube
       k0s kubeconfig admin > /home/opc/.kube/config
       chown -R opc:opc /home/opc/.kube
+      echo "Kubectl config created for opc user"
 
       # Create kubectl aliases
       echo "alias kubectl='k0s kubectl'" >> /home/opc/.bashrc
       echo "alias k='k0s kubectl'" >> /home/opc/.bashrc
+      echo "Kubectl aliases created"
 
       # Create namespaces for applications
       echo "Creating application namespaces..."
       k0s kubectl create namespace webserver || true
       k0s kubectl create namespace cloudflare-tunnel || true
       k0s kubectl create namespace monitoring || true
+      echo "Application namespaces created"
 
       # Apply default storage class
+      echo "Creating default storage class..."
       k0s kubectl apply -f - <<'EOF'
       apiVersion: storage.k8s.io/v1
       kind: StorageClass
@@ -122,8 +161,19 @@ write_files:
       provisioner: kubernetes.io/no-provisioner
       volumeBindingMode: WaitForFirstConsumer
       EOF
+      echo "Default storage class created"
 
-      echo "=== K0s Controller Setup Complete ==="
+      # Final status check
+      echo "=== Final Status Check ==="
+      echo "Nodes in cluster:"
+      k0s kubectl get nodes -o wide || echo "Failed to get nodes"
+      echo "Namespaces:"
+      k0s kubectl get namespaces || echo "Failed to get namespaces"
+      echo "Storage classes:"
+      k0s kubectl get storageclass || echo "Failed to get storage classes"
+
+      echo "=== K0s Controller Setup Complete at $(date) ==="
+      echo "Log file location: $LOG_FILE"
 
   - path: /usr/local/bin/install-tailscale.sh
     permissions: "0755"
@@ -261,6 +311,14 @@ runcmd:
     done
 
   # Setup k0s controller
-  - /usr/local/bin/setup-k0s-controller.sh
+  - |
+    echo "=== Starting K0s Controller Setup Script at $(date) ===" | tee -a /var/log/cloud-init-k0s.log
+    /usr/local/bin/setup-k0s-controller.sh 2>&1 | tee -a /var/log/cloud-init-k0s.log
+    EXIT_CODE=$${PIPESTATUS[0]}
+    echo "=== K0s Controller Setup Script completed with exit code: $EXIT_CODE at $(date) ===" | tee -a /var/log/cloud-init-k0s.log
+    if [ $EXIT_CODE -ne 0 ]; then
+      echo "ERROR: K0s setup failed!" | tee -a /var/log/cloud-init-k0s.log
+      exit $EXIT_CODE
+    fi
 
-final_message: "K0s controller node ready for ${environment} environment!"
+final_message: "K0s controller node ready for ${environment} environment! Check logs: /var/log/k0s-controller-setup.log and /var/log/cloud-init-k0s.log"
