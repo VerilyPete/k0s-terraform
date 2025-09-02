@@ -215,7 +215,6 @@ jobs:
           HOSTNAMES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
             if .devices then 
               .devices[] | select(
-                (.hostname | test("^github-runner")) or
                 (.hostname | test("^k8s-controller-staging")) or
                 (.hostname | test("^k8s-worker-[0-9]+-staging"))
               ) | .hostname
@@ -260,13 +259,12 @@ jobs:
             echo "Removing $hostname from Tailscale..."
 
             # Extract nodeId for this specific hostname
-            nodeId=$(echo "$DEVICE_RESPONSE" | \
-              jq -r --arg hostname "$hostname" '
-                if .devices then 
-                  (.devices[] | select(.hostname == $hostname) | .nodeId // empty)
-                else 
-                  empty 
-                end' 2>/dev/null)
+            nodeId=$(echo "$DEVICE_RESPONSE" | jq -r --arg hostname "$hostname" '
+              if .devices then 
+                (.devices[] | select(.hostname == $hostname) | .nodeId // empty)
+              else 
+                empty 
+              end' 2>/dev/null)
 
             if [ -n "$nodeId" ] && [ "$nodeId" != "null" ] && [ "$nodeId" != "" ]; then
               echo "  Found device $hostname with nodeId: $nodeId"

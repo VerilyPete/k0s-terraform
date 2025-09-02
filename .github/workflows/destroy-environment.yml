@@ -164,13 +164,12 @@ jobs:
             echo "Removing $hostname from Tailscale..."
 
             # Extract nodeId for this specific hostname
-            nodeId=$(echo "$DEVICE_RESPONSE" | \
-              jq -r --arg hostname "$hostname" '
-                if .devices then 
-                  (.devices[] | select(.hostname == $hostname) | .nodeId // empty)
-                else 
-                  empty 
-                end' 2>/dev/null)
+            nodeId=$(echo "$DEVICE_RESPONSE" | jq -r --arg hostname "$hostname" '
+              if .devices then 
+                (.devices[] | select(.hostname == $hostname) | .nodeId // empty)
+              else 
+                empty 
+              end' 2>/dev/null)
 
             if [ -n "$nodeId" ] && [ "$nodeId" != "null" ] && [ "$nodeId" != "" ]; then
               echo "  Found device $hostname with nodeId: $nodeId"
