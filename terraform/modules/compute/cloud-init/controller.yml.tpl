@@ -129,6 +129,12 @@ write_files:
       k0s token create --role=worker --expiry=48h > /tmp/worker-token.txt
       echo "Worker token created. Token length: $(cat /tmp/worker-token.txt | wc -c)"
       echo "Token preview: $(cat /tmp/worker-token.txt | head -c 50)..."
+      
+      # Make token file readable by opc user for GitHub Actions workflow
+      chmod 644 /tmp/worker-token.txt
+      chown root:opc /tmp/worker-token.txt
+      echo "Token file permissions set for opc user access"
+      ls -la /tmp/worker-token.txt
 
       # Setup kubectl for opc user
       echo "Setting up kubectl for opc user..."

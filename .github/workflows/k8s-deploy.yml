@@ -167,10 +167,37 @@ jobs:
 
           # Get join token
           echo "Retrieving worker join token..."
-          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo cat /tmp/worker-token.txt")
+          echo "Checking SSH connectivity to $CONTROLLER..."
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 opc@$CONTROLLER "echo 'SSH connection successful'" || {
+            echo "❌ SSH connection failed"
+            exit 1
+          }
+          
+          echo "Checking token file status..."
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "ls -la /tmp/worker-token.txt" || {
+            echo "❌ Token file not found, checking setup logs..."
+            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo tail -20 /var/log/k0s-controller-setup.log" || echo "No setup log found"
+            exit 1
+          }
+          
+          echo "Reading token file..."
+          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "cat /tmp/worker-token.txt" 2>&1)
+          COMMAND_EXIT_CODE=$?
+          
+          echo "Token read command exit code: $COMMAND_EXIT_CODE"
+          echo "Token length: ${#JOIN_TOKEN}"
+          echo "Token preview (first 50 chars): ${JOIN_TOKEN:0:50}..."
+          
+          if [ $COMMAND_EXIT_CODE -ne 0 ]; then
+            echo "❌ Failed to read token file, command output:"
+            echo "$JOIN_TOKEN"
+            exit 1
+          fi
           
           if [ -z "$JOIN_TOKEN" ]; then
-            echo "❌ Failed to get join token"
+            echo "❌ Token is empty"
+            echo "Checking if file exists and has content..."
+            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "wc -l /tmp/worker-token.txt; head -1 /tmp/worker-token.txt"
             exit 1
           fi
 
