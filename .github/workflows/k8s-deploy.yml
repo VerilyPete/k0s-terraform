@@ -202,29 +202,133 @@ jobs:
           fi
 
           # Join workers in parallel
-          echo "Joining worker nodes to cluster..."
-          
           join_worker() {
             local worker=$1
             echo "Joining $worker to cluster..."
-            
+  
             if ssh -o StrictHostKeyChecking=no opc@$worker "
+              echo '=== Debug: Starting worker join process ==='
+              echo 'Worker: $worker'
+              echo 'Token length: ${#JOIN_TOKEN}'
+          
+              # Create token file with proper permissions
+              echo 'Creating token file...'
               echo '$JOIN_TOKEN' | sudo tee /tmp/join-token.txt > /dev/null
-              sudo /usr/local/bin/k0s install worker --token-file /tmp/join-token.txt
-              sudo systemctl daemon-reload
-              sudo systemctl enable k0sworker
-              sudo systemctl start k0sworker
               
-              # Wait for service to be active
+              # Verify token file was created correctly
+              echo '=== Debug: Token file verification ==='
+              if [ -f /tmp/join-token.txt ]; then
+                echo '✅ Token file exists'
+                echo 'Token file size:' \$(stat -c%s /tmp/join-token.txt)
+                echo 'Token file permissions:' \$(ls -la /tmp/join-token.txt)
+                echo 'Token file content preview (first 50 chars):' \$(head -c 50 /tmp/join-token.txt)
+              else
+                echo '❌ Token file does not exist!'
+                exit 1
+              fi
+        
+              # Set proper permissions
+              sudo chmod 600 /tmp/join-token.txt
+        
+              # Test token validity before installing
+              echo '=== Debug: Testing token validity ==='
+              if sudo /usr/local/bin/k0s token validate --token-file /tmp/join-token.txt; then
+                echo '✅ Token is valid'
+              else
+                echo '❌ Token validation failed'
+                echo 'Token content:'
+                sudo cat /tmp/join-token.txt
+                exit 1
+              fi
+        
+              # Install worker service
+              echo '=== Debug: Installing k0s worker service ==='
+              sudo /usr/local/bin/k0s install worker --token-file /tmp/join-token.txt
+              install_exit_code=\$?
+              
+              echo 'Install command exit code:' \$install_exit_code
+              if [ \$install_exit_code -ne 0 ]; then
+                echo '❌ Install command failed'
+                exit 1
+              fi
+       
+              # Check if service file was created
+              echo '=== Debug: Service file verification ==='
+              if [ -f /etc/systemd/system/k0sworker.service ]; then
+                echo '✅ Service file created'
+                echo 'Service file content:'
+                sudo cat /etc/systemd/system/k0sworker.service
+              else
+                echo '❌ Service file not created'
+                exit 1
+              fi
+        
+              # Reload systemd and enable service
+              echo '=== Debug: Configuring systemd service ==='
+              sudo systemctl daemon-reload
+              reload_exit_code=\$?
+              echo 'Daemon reload exit code:' \$reload_exit_code
+        
+              sudo systemctl enable k0sworker
+              enable_exit_code=\$?
+              echo 'Enable service exit code:' \$enable_exit_code
+        
+              # Check service status before starting
+              echo '=== Debug: Pre-start service status ==='
+              sudo systemctl status k0sworker --no-pager || echo 'Service not yet started (expected)'
+        
+              # Start the service
+              echo '=== Debug: Starting k0s worker service ==='
+              sudo systemctl start k0sworker
+              start_exit_code=\$?
+              echo 'Start service exit code:' \$start_exit_code
+
+              # Wait a moment for service to initialize
+              sleep 5
+              
+              # Check service status after start attempt
+              echo '=== Debug: Post-start service status ==='
+              sudo systemctl status k0sworker --no-pager -l
+        
+              # Check logs for any errors
+              echo '=== Debug: Service logs (last 20 lines) ==='
+              sudo journalctl -u k0sworker --no-pager -l -n 20
+        
+              # Wait for service to be active with detailed status checks
+              echo '=== Debug: Waiting for service to become active ==='
               for i in {1..12}; do
-                if systemctl is-active --quiet k0sworker; then
+                service_status=\$(systemctl is-active k0sworker)
+                echo \"Attempt \$i/12 - Service status: \$service_status\"
+          
+                if [ \"\$service_status\" = \"active\" ]; then
                   echo '✅ $worker joined successfully'
+            
+                  # Final verification
+                  echo '=== Debug: Final verification ==='
+                  sudo systemctl status k0sworker --no-pager
                   break
+                elif [ \"\$service_status\" = \"failed\" ]; then
+                  echo '❌ Service failed to start'
+                  echo 'Recent logs:'
+                  sudo journalctl -u k0sworker --no-pager -l -n 10
+                  exit 1
                 fi
+          
                 sleep 5
               done
-              
-              sudo rm -f /tmp/join-token.txt
+        
+              # Check if we timed out
+              final_status=\$(systemctl is-active k0sworker)
+              if [ \"\$final_status\" != \"active\" ]; then
+                echo '❌ Service failed to become active within timeout'
+                echo 'Final status:' \$final_status
+                sudo journalctl -u k0sworker --no-pager -l -n 20
+                exit 1
+              fi
+        
+              # Note: NOT removing the token file immediately since the service might need it
+              # sudo rm -f /tmp/join-token.txt
+              echo '=== Debug: Keeping token file for service use ==='
             "; then
               echo "✅ $worker setup complete"
             else
