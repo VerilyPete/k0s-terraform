@@ -116,77 +116,46 @@ jobs:
             exit 0
           fi
 
-          # Extract all hostnames that match our patterns
-          HOSTNAMES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
+          # Extract all devices that match our patterns (including partial matches)
+          DEVICES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
             if .devices then 
               .devices[] | select(
-                (.hostname | test("^k8s-controller-staging")) or
-                (.hostname | test("^k8s-worker-[0-9]+-staging"))
-              ) | .hostname
+                (.hostname | test("k8s-controller-staging")) or
+                (.hostname | test("k8s-worker-[0-9]+-staging")) or
+                (.hostname | test("^k8s-controller-${{ github.event.inputs.environment }}")) or
+                (.hostname | test("^k8s-worker-[0-9]+-${{ github.event.inputs.environment }}"))
+              ) | {hostname: .hostname, nodeId: .nodeId}
             else 
               empty 
             end' 2>/dev/null)
 
-          # Also add the specific environment nodes
-          ENVIRONMENT_HOSTNAMES=(
-            "k8s-controller-${{ github.event.inputs.environment }}"
-            "k8s-worker-1-${{ github.event.inputs.environment }}"
-            "k8s-worker-2-${{ github.event.inputs.environment }}"
-          )
-
-          # Combine all hostnames into one list
-          ALL_HOSTNAMES=()
-          if [ -n "$HOSTNAMES_TO_DELETE" ]; then
-            while IFS= read -r hostname; do
-              [ -n "$hostname" ] && ALL_HOSTNAMES+=("$hostname")
-            done <<< "$HOSTNAMES_TO_DELETE"
-          fi
-          
-          # Add environment-specific hostnames
-          for hostname in "${ENVIRONMENT_HOSTNAMES[@]}"; do
-            ALL_HOSTNAMES+=("$hostname")
-          done
-
-          # Remove duplicates
-          UNIQUE_HOSTNAMES=($(printf "%s\n" "${ALL_HOSTNAMES[@]}" | sort -u))
-
-          if [ ${#UNIQUE_HOSTNAMES[@]} -eq 0 ]; then
+          if [ -z "$DEVICES_TO_DELETE" ]; then
             echo "ℹ️  No matching Tailscale devices found to clean up"
             exit 0
           fi
 
-          echo "Found ${#UNIQUE_HOSTNAMES[@]} devices to remove:"
-          printf "  - %s\n" "${UNIQUE_HOSTNAMES[@]}"
+          # Parse devices into arrays
+          DEVICE_HOSTNAMES=($(echo "$DEVICES_TO_DELETE" | jq -r '.hostname' 2>/dev/null))
+          DEVICE_NODEIDS=($(echo "$DEVICES_TO_DELETE" | jq -r '.nodeId' 2>/dev/null))
+
+          echo "Found ${#DEVICE_HOSTNAMES[@]} devices to remove:"
+          for i in "${!DEVICE_HOSTNAMES[@]}"; do
+            echo "  - ${DEVICE_HOSTNAMES[$i]} (nodeId: ${DEVICE_NODEIDS[$i]})"
+          done
           echo ""
           
           # Remove each device with enhanced error handling
           REMOVAL_COUNT=0
           FAILED_REMOVALS=()
           
-          for hostname in "${UNIQUE_HOSTNAMES[@]}"; do
+          for i in "${!DEVICE_HOSTNAMES[@]}"; do
+            hostname="${DEVICE_HOSTNAMES[$i]}"
+            nodeId="${DEVICE_NODEIDS[$i]}"
+            
             echo "Removing $hostname from Tailscale..."
 
-            # Extract nodeId for this specific hostname with error handling
-            nodeId=""
-            jq_output=$(echo "$DEVICE_RESPONSE" | jq -r --arg hostname "$hostname" '
-              if .devices then 
-                (.devices[] | select(.hostname == $hostname) | .nodeId // empty)
-              else 
-                empty 
-              end' 2>&1)
-            jq_exit_code=$?
-            
-            if [ $jq_exit_code -ne 0 ]; then
-              echo "  ❌ jq command failed for $hostname (exit code: $jq_exit_code)"
-              echo "  jq error: $jq_output"
-              FAILED_REMOVALS+=("$hostname (jq error)")
-              continue
-            fi
-            
-            nodeId="$jq_output"
-
             if [ -n "$nodeId" ] && [ "$nodeId" != "null" ] && [ "$nodeId" != "" ]; then
-              echo "  Found device $hostname with nodeId: $nodeId"
+              echo "  Using nodeId: $nodeId"
               
               # Validate nodeId format (should be alphanumeric)
               if [[ ! "$nodeId" =~ ^[a-zA-Z0-9]+$ ]]; then
@@ -225,13 +194,14 @@ jobs:
                 FAILED_REMOVALS+=("$hostname (HTTP $http_code)")
               fi
             else
-              echo "  ℹ️  $hostname not found in Tailscale (nodeId: '$nodeId')"
+              echo "  ❌ No valid nodeId found for $hostname"
+              FAILED_REMOVALS+=("$hostname (no nodeId)")
             fi
           done
 
           echo ""
           echo "🎉 Tailscale cleanup summary:"
-          echo "  Total devices: ${#UNIQUE_HOSTNAMES[@]}"
+          echo "  Total devices: ${#DEVICE_HOSTNAMES[@]}"
           echo "  Successfully removed: $REMOVAL_COUNT"
           echo "  Failed removals: ${#FAILED_REMOVALS[@]}"
           
@@ -240,7 +210,7 @@ jobs:
             printf "    - %s\n" "${FAILED_REMOVALS[@]}"
             
             # Exit with error if critical failures occurred
-            if [ ${#FAILED_REMOVALS[@]} -eq ${#UNIQUE_HOSTNAMES[@]} ]; then
+            if [ ${#FAILED_REMOVALS[@]} -eq ${#DEVICE_HOSTNAMES[@]} ]; then
               echo "❌ All device removals failed - this may indicate an API or authentication issue"
               exit 1
             else
