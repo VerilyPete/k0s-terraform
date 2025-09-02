@@ -1,0 +1,88 @@
+# Default values for webserver
+# This is a YAML-formatted file.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/verilypete/webserver
+  pullPolicy: Always
+  tag: "latest"
+
+replicaCount: 2
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 80
+  name: http
+
+ingress:
+  enabled: true
+  className: "cloudflare-tunnel"
+  annotations:
+    cloudflare-tunnel.ingress.kubernetes.io/tunnel-name: webserver-staging
+  hosts:
+    - host: mclaurinquist.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Pod affinity configuration
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - webserver
+          topologyKey: kubernetes.io/hostname
+
+# Health check configuration
+healthChecks:
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 80
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 80
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# Namespace configuration
+namespace:
+  create: true
+  name: webserver
+
+# Additional namespaces to create
+additionalNamespaces:
+  - cloudflare-tunnel
+
+nodeSelector: {}
+tolerations: []
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}

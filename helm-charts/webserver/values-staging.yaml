@@ -1,0 +1,14 @@
+# Staging environment overrides
+image:
+  tag: "latest"
+
+ingress:
+  annotations:
+    cloudflare-tunnel.ingress.kubernetes.io/tunnel-name: webserver-staging
+  hosts:
+    - host: mclaurinquist.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+replicaCount: 2

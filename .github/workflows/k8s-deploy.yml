@@ -389,7 +389,7 @@ jobs:
           
           echo "Configuring cluster nodes and storage..."
           
-          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << 'EOF'
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << EOF
             # Wait for nodes to be ready
             sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k8s-worker-1-$ENVIRONMENT --timeout=120s
             sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k8s-worker-2-$ENVIRONMENT --timeout=120s
