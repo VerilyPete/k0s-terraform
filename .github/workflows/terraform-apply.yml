@@ -254,36 +254,94 @@ jobs:
           printf "  - %s\n" "${UNIQUE_HOSTNAMES[@]}"
           echo ""
           
-          # Remove each device
+          # Remove each device with enhanced error handling
+          REMOVAL_COUNT=0
+          FAILED_REMOVALS=()
+          
           for hostname in "${UNIQUE_HOSTNAMES[@]}"; do
             echo "Removing $hostname from Tailscale..."
 
-            # Extract nodeId for this specific hostname
-            nodeId=$(echo "$DEVICE_RESPONSE" | jq -r --arg hostname "$hostname" '
+            # Extract nodeId for this specific hostname with error handling
+            nodeId=""
+            jq_output=$(echo "$DEVICE_RESPONSE" | jq -r --arg hostname "$hostname" '
               if .devices then 
                 (.devices[] | select(.hostname == $hostname) | .nodeId // empty)
               else 
                 empty 
-              end' 2>/dev/null)
+              end' 2>&1)
+            jq_exit_code=$?
+            
+            if [ $jq_exit_code -ne 0 ]; then
+              echo "  ❌ jq command failed for $hostname (exit code: $jq_exit_code)"
+              echo "  jq error: $jq_output"
+              FAILED_REMOVALS+=("$hostname (jq error)")
+              continue
+            fi
+            
+            nodeId="$jq_output"
 
             if [ -n "$nodeId" ] && [ "$nodeId" != "null" ] && [ "$nodeId" != "" ]; then
               echo "  Found device $hostname with nodeId: $nodeId"
-              DELETE_RESPONSE=$(curl -s -w "%{http_code}" -X DELETE \
-                -H "Authorization: Bearer ${{ secrets.TAILSCALE_API_KEY }}" \
-                "https://api.tailscale.com/api/v2/device/$nodeId" 2>/dev/null)
               
-              if [[ "$DELETE_RESPONSE" == *"200"* ]] || [[ "$DELETE_RESPONSE" == *"204"* ]]; then
+              # Validate nodeId format (should be alphanumeric)
+              if [[ ! "$nodeId" =~ ^[a-zA-Z0-9]+$ ]]; then
+                echo "  ❌ Invalid nodeId format: $nodeId"
+                FAILED_REMOVALS+=("$hostname (invalid nodeId)")
+                continue
+              fi
+              
+              # Make delete request with better error handling
+              DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE \
+                -H "Authorization: Bearer ${{ secrets.TAILSCALE_API_KEY }}" \
+                "https://api.tailscale.com/api/v2/device/$nodeId" 2>&1)
+              curl_exit_code=$?
+              
+              if [ $curl_exit_code -ne 0 ]; then
+                echo "  ❌ curl command failed for $hostname (exit code: $curl_exit_code)"
+                echo "  curl error: $DELETE_RESPONSE"
+                FAILED_REMOVALS+=("$hostname (curl error)")
+                continue
+              fi
+              
+              # Parse response and status code
+              http_code=$(echo "$DELETE_RESPONSE" | tail -n1)
+              response_body=$(echo "$DELETE_RESPONSE" | head -n -1)
+              
+              echo "  HTTP Status: $http_code"
+              if [ -n "$response_body" ]; then
+                echo "  Response: $response_body"
+              fi
+              
+              if [[ "$http_code" == "200" ]] || [[ "$http_code" == "204" ]]; then
                 echo "  ✅ Successfully removed $hostname"
+                REMOVAL_COUNT=$((REMOVAL_COUNT + 1))
               else
-                echo "  ⚠️  Failed to remove $hostname (HTTP response: $DELETE_RESPONSE)"
+                echo "  ⚠️  Failed to remove $hostname (HTTP $http_code)"
+                FAILED_REMOVALS+=("$hostname (HTTP $http_code)")
               fi
             else
-              echo "  ℹ️  $hostname not found or already removed"
+              echo "  ℹ️  $hostname not found in Tailscale (nodeId: '$nodeId')"
             fi
           done
 
           echo ""
-          echo "🎉 Tailscale cleanup complete - removed ${#UNIQUE_HOSTNAMES[@]} devices"
+          echo "🎉 Tailscale cleanup summary:"
+          echo "  Total devices: ${#UNIQUE_HOSTNAMES[@]}"
+          echo "  Successfully removed: $REMOVAL_COUNT"
+          echo "  Failed removals: ${#FAILED_REMOVALS[@]}"
+          
+          if [ ${#FAILED_REMOVALS[@]} -gt 0 ]; then
+            echo "  Failed devices:"
+            printf "    - %s\n" "${FAILED_REMOVALS[@]}"
+            
+            # Exit with error if critical failures occurred
+            if [ ${#FAILED_REMOVALS[@]} -eq ${#UNIQUE_HOSTNAMES[@]} ]; then
+              echo "❌ All device removals failed - this may indicate an API or authentication issue"
+              exit 1
+            else
+              echo "⚠️  Some devices failed to remove but continuing with terraform destroy"
+            fi
+          fi
 
       - name: Terraform Destroy
         if: github.event.inputs.destroy == 'true'
