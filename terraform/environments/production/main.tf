@@ -81,7 +81,7 @@ module "compute" {
   subnet_id             = var.subnet_id
   image_id              = var.image_id
   ssh_public_key        = var.ssh_public_key
-  ssh_private_key       = var.ssh_private_key
+# ssh_private_key removed - no longer using provisioners
   tailscale_auth_key    = var.tailscale_auth_key
   environment           = local.environment
   controller_shape_config = var.controller_shape_config

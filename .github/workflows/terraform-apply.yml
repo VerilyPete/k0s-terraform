@@ -128,12 +128,7 @@ jobs:
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
           EOF
           
-          # Add SSH private key using heredoc syntax to handle multi-line content
-          cat >> terraform.tfvars << 'SSHKEY'
-          ssh_private_key = <<EOT
-          ${{ secrets.SSH_PRIVATE_KEY }}
-          EOT
-          SSHKEY
+          # ssh_private_key removed - no longer using provisioners
           
           # No path expansion needed - using absolute paths
           
