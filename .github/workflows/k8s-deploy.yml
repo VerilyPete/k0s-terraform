@@ -362,25 +362,35 @@ jobs:
           
           echo "Verifying cluster state..."
           
-          # Wait for nodes to appear in cluster
-          sleep 60
+          # Check immediately if nodes are already available
+          echo "🔍 Checking if worker nodes are already ready..."
+          NODE_COUNT=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes --no-headers 2>/dev/null | wc -l" || echo "0")
           
-          for i in {1..10}; do
-            NODE_COUNT=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes --no-headers 2>/dev/null | wc -l" || echo "0")
+          if [ "$NODE_COUNT" -ge 2 ]; then
+            echo "✅ All worker nodes already ready!"
+            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes -o wide"
+          else
+            echo "⏳ Only $NODE_COUNT/2 nodes ready, waiting for worker nodes to join..."
+            # Wait for nodes to appear in cluster
+            sleep 60
             
-            if [ "$NODE_COUNT" -ge 2 ]; then
-              echo "✅ All worker nodes found in cluster"
-              ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes -o wide"
-              break
-            else
-              if [ $i -eq 10 ]; then
-                echo "❌ Timeout waiting for worker nodes"
-                exit 1
+            for i in {1..10}; do
+              NODE_COUNT=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes --no-headers 2>/dev/null | wc -l" || echo "0")
+              
+              if [ "$NODE_COUNT" -ge 2 ]; then
+                echo "✅ All worker nodes found in cluster"
+                ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes -o wide"
+                break
+              else
+                if [ $i -eq 10 ]; then
+                  echo "❌ Timeout waiting for worker nodes"
+                  exit 1
+                fi
+                echo "⏳ Only $NODE_COUNT/2 nodes ready, waiting 15s..."
+                sleep 15
               fi
-              echo "⏳ Only $NODE_COUNT/2 nodes ready, waiting 15s..."
-              sleep 15
-            fi
-          done
+            done
+          fi
 
       - name: Configure cluster
         run: |
