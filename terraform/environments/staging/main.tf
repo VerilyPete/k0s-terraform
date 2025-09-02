@@ -8,10 +8,6 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.12"  # Updated to modern version
     }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.2"
-    }
   }
   required_version = ">= 1.12.0"  # Require Terraform with OCI backend support
 

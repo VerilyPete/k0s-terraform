@@ -133,14 +133,14 @@ resource "time_sleep" "wait_for_instances" {
   create_duration = "60s"
 }
 
-# Join workers to the cluster
-resource "null_resource" "join_workers" {
+# Join workers to the cluster using terraform_data (modern replacement for null_resource)
+resource "terraform_data" "join_workers" {
   for_each = oci_core_instance.workers
   
   depends_on = [time_sleep.wait_for_instances]
 
   # Trigger re-run if worker instance changes
-  triggers = {
+  triggers_replace = {
     worker_id     = each.value.id
     controller_id = oci_core_instance.controller.id
   }
