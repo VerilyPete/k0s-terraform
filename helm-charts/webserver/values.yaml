@@ -74,7 +74,7 @@ healthChecks:
 
 # Namespace configuration
 namespace:
-  create: true
+  create: false
   name: webserver
 
 # Additional namespaces to create
