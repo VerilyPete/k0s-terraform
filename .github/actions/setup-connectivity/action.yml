@@ -56,8 +56,34 @@ runs:
       run: |
         echo "Setting up Tailscale connectivity..."
         
-        # Install Tailscale CLI
-        curl -fsSL https://tailscale.com/install.sh | sh
+        # Debug: Check network connectivity
+        echo "🔍 Network connectivity test:"
+        ping -c 1 8.8.8.8 || echo "❌ Cannot ping 8.8.8.8"
+        
+        # Debug: Check DNS resolution
+        echo "🔍 DNS resolution test:"
+        nslookup tailscale.com || echo "❌ Cannot resolve tailscale.com"
+        
+        # Debug: Test HTTPS connectivity
+        echo "🔍 HTTPS connectivity test:"
+        curl -I --connect-timeout 10 https://tailscale.com || echo "❌ Cannot reach tailscale.com"
+        
+        # Install Tailscale CLI with retries
+        echo "📥 Installing Tailscale..."
+        for attempt in {1..3}; do
+          echo "Installation attempt $attempt/3..."
+          if curl --connect-timeout 30 --retry 2 --retry-delay 3 -fsSL https://tailscale.com/install.sh | sh; then
+            echo "✅ Tailscale installation successful"
+            break
+          else
+            echo "⚠️  Installation attempt $attempt failed"
+            if [ $attempt -eq 3 ]; then
+              echo "❌ All installation attempts failed"
+              exit 1
+            fi
+            sleep 5
+          fi
+        done
         
         # Start Tailscale with auth key and enable DNS
         sudo tailscale up --authkey="${{ inputs.tailscale_auth_key }}" --hostname="github-runner-$(date +%s)" --accept-dns=true
@@ -66,6 +92,7 @@ runs:
         for i in {1..30}; do
           if sudo tailscale status >/dev/null 2>&1; then
             echo "✅ Tailscale is connected"
+            sudo tailscale status
             break
           fi
           sleep 1
