@@ -33,67 +33,44 @@ provider "oci" {
   region              = var.region
 }
 
-# Data sources for existing OCI resources
-data "oci_identity_availability_domains" "ads" {
-  compartment_id = var.compartment_id
-}
+# K0s environment module
+module "k0s_environment" {
+  source = "../../modules/k0s-environment"
 
-# Local values for environment-specific configuration
-locals {
+  # Environment identification
   environment = "production"
-  common_tags = {
-    Environment = local.environment
-    Project     = "k0s-cluster"
-    ManagedBy   = "terraform"
-  }
-}
 
-# Networking module for security lists
-module "networking" {
-  source = "../../modules/networking"
+  # OCI Provider Configuration
+  tenancy_ocid       = var.tenancy_ocid
+  oci_namespace      = var.oci_namespace
+  user_ocid          = var.user_ocid
+  fingerprint        = var.fingerprint
+  private_key_path   = var.private_key_path
+  region             = var.region
+  compartment_id     = var.compartment_id
+  availability_domain = var.availability_domain
 
-  compartment_id      = var.compartment_id
-  vcn_id              = var.vcn_id
-  environment         = local.environment
+  # Infrastructure Configuration
+  subnet_id       = var.subnet_id
+  vcn_id          = var.vcn_id
+  route_table_id  = var.route_table_id
+  image_id        = var.image_id
+
+  # Access Configuration
+  ssh_public_key     = var.ssh_public_key
+  tailscale_auth_key = var.tailscale_auth_key
+
+  # Network Configuration
   k8s_cluster_cidr    = var.k8s_cluster_cidr
   k8s_service_cidr    = var.k8s_service_cidr
   private_subnet_cidr = var.private_subnet_cidr
-  route_table_id      = var.route_table_id
-  worker_private_ips  = module.compute.worker_private_ips
 
-  depends_on = [module.compute]
-}
-
-# Storage module
-module "storage" {
-  source = "../../modules/storage"
-
-  compartment_id        = var.compartment_id
-  tenancy_ocid         = var.tenancy_ocid
-  availability_domain   = var.availability_domain
-  environment          = local.environment
-  storage_volumes      = var.storage_volumes
-  backup_policy_enabled = var.backup_policy_enabled
-}
-
-# Compute module
-module "compute" {
-  source = "../../modules/compute"
-
-  compartment_id         = var.compartment_id
-  availability_domain    = var.availability_domain
-  subnet_id             = var.subnet_id
-  image_id              = var.image_id
-  ssh_public_key        = var.ssh_public_key
-# ssh_private_key removed - no longer using provisioners
-  tailscale_auth_key    = var.tailscale_auth_key
-  environment           = local.environment
+  # Instance Configuration
   controller_shape_config = var.controller_shape_config
-  worker_shape_config   = var.worker_shape_config
-  worker_count          = var.worker_count
-  storage_volume_ids    = module.storage.volume_ids
+  worker_shape_config     = var.worker_shape_config
+  worker_count           = var.worker_count
 
-  depends_on = [
-    module.storage
-  ]
+  # Storage Configuration
+  storage_volumes       = var.storage_volumes
+  backup_policy_enabled = var.backup_policy_enabled
 }

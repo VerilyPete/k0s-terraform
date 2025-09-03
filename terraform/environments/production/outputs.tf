@@ -1,41 +1,32 @@
+# Pass through outputs from the shared k0s-environment module
 output "cluster_info" {
   description = "Cluster information"
-  value = {
-    environment = "production"
-    controller = {
-      instance_id = module.compute.controller_instance.id
-      private_ip  = module.compute.controller_instance.private_ip
-      hostname    = "k8s-controller-production"
-    }
-    workers = {
-      for k, v in module.compute.worker_instances : k => {
-        instance_id = v.id
-        private_ip  = v.private_ip
-        hostname    = "k8s-${k}-production"
-      }
-    }
-    storage = {
-      for k, v in module.storage.volumes : k => {
-        volume_id = v.id
-        size_gb   = v.size_gb
-      }
-    }
-    networking = {
-      security_list_id = module.networking.security_list_id
-      rules_summary    = module.networking.security_list_rules_summary
-    }
-  }
+  value       = module.k0s_environment.cluster_info
 }
 
 output "connection_info" {
   description = "Connection information for the cluster"
-  value = {
-    ssh_controller = "ssh opc@k8s-controller-production"
-    kubectl_command = "sudo /usr/local/bin/k0s kubectl"
-    namespace_info = {
-      webserver         = "Application namespace"
-      cloudflare_tunnel = "Ingress controller namespace"
-      monitoring        = "Prometheus/Grafana namespace"
-    }
-  }
+  value       = module.k0s_environment.connection_info
+}
+
+# Additional production-specific outputs if needed
+output "environment" {
+  description = "Environment name"
+  value       = module.k0s_environment.environment
+}
+
+# Individual module outputs for detailed access
+output "compute" {
+  description = "Compute module outputs"
+  value       = module.k0s_environment.compute
+}
+
+output "storage" {
+  description = "Storage module outputs"
+  value       = module.k0s_environment.storage
+}
+
+output "networking" {
+  description = "Networking module outputs"
+  value       = module.k0s_environment.networking
 }
