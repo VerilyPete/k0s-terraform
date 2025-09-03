@@ -164,6 +164,11 @@ jobs:
             echo "  Attempt $i/24 - waiting 10s..."
             sleep 10
           done
+          
+          # Add kubectl alias for easier cluster management
+          echo "Setting up kubectl alias..."
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "echo \"alias kubectl='sudo /usr/local/bin/k0s kubectl'\" >> ~/.bashrc"
+          echo "✅ kubectl alias added to bashrc"
 
           # Get join token - FIXED VERSION
           echo "Retrieving worker join token..."
