@@ -30,3 +30,14 @@ variable "private_subnet_cidr" {
   type        = string
   default     = "10.0.1.0/24"
 }
+
+variable "route_table_id" {
+  description = "Route table ID to add K8s pod networking routes to"
+  type        = string
+}
+
+variable "worker_private_ips" {
+  description = "List of private IPs for K8s worker nodes"
+  type        = list(string)
+  default     = []
+}

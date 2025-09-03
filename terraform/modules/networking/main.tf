@@ -147,3 +147,19 @@ resource "oci_core_security_list" "k8s_cluster" {
     "ManagedBy"   = "terraform"
   }
 }
+
+# Pod network route rules for K8s cluster
+# These routes direct pod traffic to the appropriate worker nodes
+resource "oci_core_route_rule" "pod_network_routes" {
+  count = length(var.worker_private_ips)
+  
+  route_table_id         = var.route_table_id
+  destination            = "10.244.${count.index}.0/24"
+  destination_type       = "CIDR_BLOCK"
+  network_entity_id      = var.worker_private_ips[count.index]
+  description            = "Pod network for worker node ${count.index + 1} - ${var.environment}"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}

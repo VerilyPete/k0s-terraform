@@ -48,7 +48,7 @@ locals {
   }
 }
 
-# Networking module
+# Networking module for security lists
 module "networking" {
   source = "../../modules/networking"
 
@@ -58,6 +58,10 @@ module "networking" {
   k8s_cluster_cidr    = var.k8s_cluster_cidr
   k8s_service_cidr    = var.k8s_service_cidr
   private_subnet_cidr = var.private_subnet_cidr
+  route_table_id      = var.route_table_id
+  worker_private_ips  = module.compute.worker_private_ips
+
+  depends_on = [module.compute]
 }
 
 # Storage module
@@ -90,7 +94,6 @@ module "compute" {
   storage_volume_ids    = module.storage.volume_ids
 
   depends_on = [
-    module.networking,
     module.storage
   ]
 }
