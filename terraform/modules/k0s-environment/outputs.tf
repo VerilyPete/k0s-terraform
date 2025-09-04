@@ -75,7 +75,8 @@ output "networking" {
   value = {
     security_list_id           = module.networking.security_list_id
     security_list_rules_summary = module.networking.security_list_rules_summary
-    pod_network_route_ids      = module.networking.pod_network_route_ids
-    route_rules_summary        = module.networking.route_rules_summary
+    # TODO: Re-enable when route rule management is fixed
+    # pod_network_route_ids      = module.networking.pod_network_route_ids
+    # route_rules_summary        = module.networking.route_rules_summary
   }
 }
