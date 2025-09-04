@@ -49,20 +49,20 @@ resource "oci_core_instance" "controller" {
 
 # Storage volumes are now managed by the storage module
 
-# Worker instances
-resource "oci_core_instance" "workers" {
-  for_each = {
-    "worker-1" = {
-      name           = "k8s-worker-1-${var.environment}"
-      hostname       = "k8s-worker-1-${var.environment}"
-      attach_storage = true
-    }
-    "worker-2" = {
-      name           = "k8s-worker-2-${var.environment}"
-      hostname       = "k8s-worker-2-${var.environment}"
-      attach_storage = false
+# Generate dynamic worker configuration based on worker_count
+locals {
+  workers = {
+    for i in range(1, var.worker_count + 1) : "worker-${i}" => {
+      name           = "k8s-worker-${i}-${var.environment}"
+      hostname       = "k8s-worker-${i}-${var.environment}"
+      attach_storage = i == 1  # Only worker-1 gets storage for persistent volumes
     }
   }
+}
+
+# Worker instances
+resource "oci_core_instance" "workers" {
+  for_each = local.workers
 
   compartment_id      = var.compartment_id
   availability_domain = var.availability_domain
