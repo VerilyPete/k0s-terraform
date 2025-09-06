@@ -148,67 +148,29 @@ resource "oci_core_security_list" "k8s_cluster" {
   }
 }
 
-# Read existing route table to preserve current routes
-data "oci_core_route_tables" "existing" {
-  compartment_id = var.compartment_id
-  vcn_id         = var.vcn_id
-  
-  filter {
-    name   = "id"
-    values = [var.route_table_id]
-  }
-}
+# TODO: OCI doesn't support routing to private IPs via route tables
+# Error: "Local VCN routes are read only and can only be created by OCI"
+# Pod networking will need to be handled at the instance level or via other means
 
-# Get the first (and only) route table from the filtered list
-locals {
-  existing_route_table = data.oci_core_route_tables.existing.route_tables[0]
-}
+# Commented out - route table approach doesn't work for private IP targets
+# data "oci_core_route_tables" "existing" {
+#   compartment_id = var.compartment_id
+#   vcn_id         = var.vcn_id
+#   
+#   filter {
+#     name   = "id"
+#     values = [var.route_table_id]
+#   }
+# }
 
-# Create new route table with existing routes + pod network routes
-resource "oci_core_route_table" "k8s_pod_networking" {
-  compartment_id = var.compartment_id
-  vcn_id         = var.vcn_id
-  display_name   = "k8s-pod-network-routes-${var.environment}"
+# locals {
+#   existing_route_table = data.oci_core_route_tables.existing.route_tables[0]
+# }
 
-  # Preserve existing routes from the original route table
-  dynamic "route_rules" {
-    for_each = local.existing_route_table.route_rules
-    content {
-      destination       = route_rules.value.destination
-      destination_type  = route_rules.value.destination_type
-      network_entity_id = route_rules.value.network_entity_id
-      description       = route_rules.value.description
-    }
-  }
+# resource "oci_core_route_table" "k8s_pod_networking" {
+#   ...pod network route table creation...
+# }
 
-  # Add pod network routes for each worker
-  dynamic "route_rules" {
-    for_each = { for idx, ip in var.worker_private_ips : idx => ip }
-    content {
-      destination       = "10.244.${route_rules.key}.0/24"
-      destination_type  = "CIDR_BLOCK"
-      network_entity_id = route_rules.value
-      description       = "Pod network for worker-${route_rules.key + 1} - ${var.environment}"
-    }
-  }
-
-  freeform_tags = {
-    "Environment" = var.environment
-    "ManagedBy"   = "terraform"
-    "Purpose"     = "k8s-pod-networking"
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# Update subnet to use our new route table
-resource "oci_core_route_table_attachment" "k8s_subnet" {
-  subnet_id      = var.subnet_id
-  route_table_id = oci_core_route_table.k8s_pod_networking.id
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
+# resource "oci_core_route_table_attachment" "k8s_subnet" {
+#   ...subnet association...
+# }

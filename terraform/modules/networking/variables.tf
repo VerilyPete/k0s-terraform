@@ -31,10 +31,11 @@ variable "private_subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
-variable "route_table_id" {
-  description = "Route table ID to read existing routes from and replace with pod networking routes"
-  type        = string
-}
+# TODO: Re-enable when pod networking solution is implemented
+# variable "route_table_id" {
+#   description = "Route table ID to read existing routes from and replace with pod networking routes"
+#   type        = string
+# }
 
 variable "subnet_id" {
   description = "Subnet ID to associate with the new route table"

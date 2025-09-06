@@ -75,7 +75,8 @@ output "networking" {
   value = {
     security_list_id           = module.networking.security_list_id
     security_list_rules_summary = module.networking.security_list_rules_summary
-    k8s_route_table_id         = module.networking.k8s_route_table_id
-    route_table_summary        = module.networking.route_table_summary
+    # TODO: Re-enable when pod networking solution is implemented
+    # k8s_route_table_id         = module.networking.k8s_route_table_id
+    # route_table_summary        = module.networking.route_table_summary
   }
 }
