@@ -53,8 +53,7 @@ module "k0s_environment" {
   # Infrastructure Configuration
   subnet_id       = var.subnet_id
   vcn_id          = var.vcn_id
-  # TODO: Re-enable when route rule management is fixed
-  # route_table_id  = var.route_table_id
+  route_table_id  = var.route_table_id
   image_id        = var.image_id
 
   # Access Configuration

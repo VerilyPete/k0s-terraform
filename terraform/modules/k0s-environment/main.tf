@@ -55,8 +55,8 @@ module "networking" {
   k8s_cluster_cidr    = var.k8s_cluster_cidr
   k8s_service_cidr    = var.k8s_service_cidr
   private_subnet_cidr = var.private_subnet_cidr
-  # TODO: Re-enable when route rule management is fixed
-  # route_table_id      = var.route_table_id
+  route_table_id      = var.route_table_id
+  subnet_id           = var.subnet_id
   worker_private_ips  = module.compute.worker_private_ips
 
   depends_on = [module.compute]

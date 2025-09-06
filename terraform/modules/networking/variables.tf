@@ -31,11 +31,15 @@ variable "private_subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
-# TODO: Re-enable when route rule management is fixed
-# variable "route_table_id" {
-#   description = "Route table ID to add K8s pod networking routes to"
-#   type        = string
-# }
+variable "route_table_id" {
+  description = "Route table ID to read existing routes from and replace with pod networking routes"
+  type        = string
+}
+
+variable "subnet_id" {
+  description = "Subnet ID to associate with the new route table"
+  type        = string
+}
 
 variable "worker_private_ips" {
   description = "List of private IPs for K8s worker nodes"
