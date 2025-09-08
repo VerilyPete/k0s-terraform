@@ -120,10 +120,10 @@ jobs:
           DEVICES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
             if .devices then 
               .devices[] | select(
-                (.hostname | test("k8s-controller-staging")) or
-                (.hostname | test("k8s-worker-[0-9]+-staging")) or
-                (.hostname | test("^k8s-controller-${{ github.event.inputs.environment }}")) or
-                (.hostname | test("^k8s-worker-[0-9]+-${{ github.event.inputs.environment }}"))
+                (.hostname | test("k0scontroller-staging")) or
+                (.hostname | test("k0sworker-[0-9]+-staging")) or
+                (.hostname | test("^k0scontroller-${{ github.event.inputs.environment }}")) or
+                (.hostname | test("^k0sworker-[0-9]+-${{ github.event.inputs.environment }}"))
               ) | {hostname: .hostname, nodeId: .nodeId}
             else 
               empty 

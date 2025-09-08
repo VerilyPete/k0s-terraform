@@ -38,7 +38,7 @@ runs:
         
         # Configure SSH for cluster nodes
         cat >> ~/.ssh/config << EOF
-        Host k8s-*
+        Host k0s*
           User opc
           StrictHostKeyChecking no
           UserKnownHostsFile /dev/null

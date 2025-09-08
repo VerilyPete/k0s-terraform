@@ -305,10 +305,10 @@ jobs:
             DEVICES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
               if .devices then 
                 .devices[] | select(
-                  (.hostname | test("k8s-controller-staging")) or
-                  (.hostname | test("k8s-worker-[0-9]+-staging")) or
-                  (.hostname | test("^k8s-controller-${{ steps.env.outputs.environment }}")) or
-                  (.hostname | test("^k8s-worker-[0-9]+-${{ steps.env.outputs.environment }}"))
+                  (.hostname | test("k0scontroller-staging")) or
+                  (.hostname | test("k0sworker-[0-9]+-staging")) or
+                  (.hostname | test("^k0scontroller-${{ steps.env.outputs.environment }}")) or
+                  (.hostname | test("^k0sworker-[0-9]+-${{ steps.env.outputs.environment }}"))
                 ) | {hostname: .hostname, nodeId: .nodeId}
               else 
                 empty 
@@ -378,10 +378,10 @@ jobs:
           DEVICES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
             if .devices then 
               .devices[] | select(
-                (.hostname | test("k8s-controller-staging")) or
-                (.hostname | test("k8s-worker-[0-9]+-staging")) or
-                (.hostname | test("^k8s-controller-${{ steps.env.outputs.environment }}")) or
-                (.hostname | test("^k8s-worker-[0-9]+-${{ steps.env.outputs.environment }}"))
+                (.hostname | test("k0scontroller-staging")) or
+                (.hostname | test("k0sworker-[0-9]+-staging")) or
+                (.hostname | test("^k0scontroller-${{ steps.env.outputs.environment }}")) or
+                (.hostname | test("^k0sworker-[0-9]+-${{ steps.env.outputs.environment }}"))
               ) | {hostname: .hostname, nodeId: .nodeId}
             else 
               empty 
@@ -537,10 +537,10 @@ jobs:
           echo "============================================="
 
   # Call the K8s deployment workflow only if infrastructure was applied/changed
-  k8s-deployment:
+  k0sdeployment:
     if: github.event.inputs.destroy != 'true' && needs.terraform-apply.outputs.controller_ip != ''
     needs: terraform-apply
-    uses: ./.github/workflows/k8s-deploy.yml
+    uses: ./.github/workflows/k0sdeploy.yml
     with:
       environment: ${{ needs.terraform-apply.outputs.environment }}
       controller_ip: ${{ needs.terraform-apply.outputs.controller_ip }}
