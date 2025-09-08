@@ -305,10 +305,10 @@ jobs:
             DEVICES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
               if .devices then 
                 .devices[] | select(
-                  (.hostname | test("k0scontroller-staging")) or
-                  (.hostname | test("k0sworker-[0-9]+-staging")) or
-                  (.hostname | test("^k0scontroller-${{ steps.env.outputs.environment }}")) or
-                  (.hostname | test("^k0sworker-[0-9]+-${{ steps.env.outputs.environment }}"))
+                  (.hostname | test("k0s-controller-staging")) or
+                  (.hostname | test("k0s-worker-[0-9]+-staging")) or
+                  (.hostname | test("^k0s-controller-${{ steps.env.outputs.environment }}")) or
+                  (.hostname | test("^k0s-worker-[0-9]+-${{ steps.env.outputs.environment }}"))
                 ) | {hostname: .hostname, nodeId: .nodeId}
               else 
                 empty 
@@ -378,10 +378,10 @@ jobs:
           DEVICES_TO_DELETE=$(echo "$DEVICE_RESPONSE" | jq -r '
             if .devices then 
               .devices[] | select(
-                (.hostname | test("k0scontroller-staging")) or
-                (.hostname | test("k0sworker-[0-9]+-staging")) or
-                (.hostname | test("^k0scontroller-${{ steps.env.outputs.environment }}")) or
-                (.hostname | test("^k0sworker-[0-9]+-${{ steps.env.outputs.environment }}"))
+                (.hostname | test("k0s-controller-staging")) or
+                (.hostname | test("k0s-worker-[0-9]+-staging")) or
+                (.hostname | test("^k0s-controller-${{ steps.env.outputs.environment }}")) or
+                (.hostname | test("^k0s-worker-[0-9]+-${{ steps.env.outputs.environment }}"))
               ) | {hostname: .hostname, nodeId: .nodeId}
             else 
               empty 
@@ -540,7 +540,7 @@ jobs:
   k0sdeployment:
     if: github.event.inputs.destroy != 'true' && needs.terraform-apply.outputs.controller_ip != ''
     needs: terraform-apply
-    uses: ./.github/workflows/k0sdeploy.yml
+    uses: ./.github/workflows/k0s-deploy.yml
     with:
       environment: ${{ needs.terraform-apply.outputs.environment }}
       controller_ip: ${{ needs.terraform-apply.outputs.controller_ip }}
