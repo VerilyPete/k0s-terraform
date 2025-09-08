@@ -12,6 +12,15 @@ data "oci_identity_availability_domains" "ads" {
   compartment_id = var.compartment_id
 }
 
+# IAM module for OCI Cloud Controller Manager permissions
+module "iam" {
+  source = "../iam"
+
+  tenancy_ocid   = var.tenancy_ocid
+  compartment_id = var.compartment_id
+  environment    = var.environment
+}
+
 # Storage module
 module "storage" {
   source = "../storage"
@@ -39,6 +48,7 @@ module "compute" {
   worker_shape_config   = var.worker_shape_config
   worker_count          = var.worker_count
   storage_volume_ids    = module.storage.volume_ids
+  vcn_id                = var.vcn_id
 
   depends_on = [
     module.storage

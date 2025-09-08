@@ -69,3 +69,8 @@ variable "storage_volume_ids" {
   type        = map(string)
   default     = {}
 }
+
+variable "vcn_id" {
+  description = "OCI VCN ID for OCI Cloud Controller Manager"
+  type        = string
+}
