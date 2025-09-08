@@ -3,7 +3,7 @@
 resource "oci_core_instance" "controller" {
   compartment_id      = var.compartment_id
   availability_domain = var.availability_domain
-  display_name        = "k8s-controller-${var.environment}"
+  display_name        = "k0s-controller-${var.environment}"
   shape               = "VM.Standard.A1.Flex"
 
   shape_config {
@@ -18,17 +18,17 @@ resource "oci_core_instance" "controller" {
 
   create_vnic_details {
     subnet_id              = var.subnet_id
-    display_name           = "k8s-controller-${var.environment}"
+    display_name           = "k0s-controller-${var.environment}"
     assign_public_ip       = false
     skip_source_dest_check = true
   }
 
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
-    HOSTNAME           = "k8s-controller-${var.environment}"
+    HOSTNAME           = "k0s-controller-${var.environment}"
     TAILSCALE_AUTH_KEY = var.tailscale_auth_key
     user_data = base64encode(templatefile("${path.module}/cloud-init/controller.yml.tpl", {
-      hostname           = "k8s-controller-${var.environment}"
+      hostname           = "k0s-controller-${var.environment}"
       tailscale_auth_key = var.tailscale_auth_key
       environment        = var.environment
       compartment_id     = var.compartment_id
@@ -55,8 +55,8 @@ resource "oci_core_instance" "controller" {
 locals {
   workers = {
     for i in range(1, var.worker_count + 1) : "worker-${i}" => {
-      name           = "k8s-worker-${i}-${var.environment}"
-      hostname       = "k8s-worker-${i}-${var.environment}"
+      name           = "k0s-worker-${i}-${var.environment}"
+      hostname       = "k0s-worker-${i}-${var.environment}"
       attach_storage = i == 1  # Only worker-1 gets storage for persistent volumes
     }
   }

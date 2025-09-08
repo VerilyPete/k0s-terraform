@@ -12,13 +12,13 @@ output "cluster_info" {
     controller = {
       instance_id = module.compute.controller_instance.id
       private_ip  = module.compute.controller_instance.private_ip
-      hostname    = "k8s-controller-${var.environment}"
+      hostname    = "k0s-controller-${var.environment}"
     }
     workers = {
       for k, v in module.compute.worker_instances : k => {
         instance_id = v.id
         private_ip  = v.private_ip
-        hostname    = "k8s-${k}-${var.environment}"
+        hostname    = "k0s-${k}-${var.environment}"
       }
     }
     storage = {
@@ -38,7 +38,7 @@ output "cluster_info" {
 output "connection_info" {
   description = "Connection information for the cluster"
   value = {
-    ssh_controller = "ssh opc@k8s-controller-${var.environment}"
+    ssh_controller = "ssh opc@k0s-controller-${var.environment}"
     kubectl_command = "sudo /usr/local/bin/k0s kubectl"
     namespace_info = {
       webserver         = "Application namespace"
@@ -76,7 +76,7 @@ output "networking" {
     security_list_id           = module.networking.security_list_id
     security_list_rules_summary = module.networking.security_list_rules_summary
     # TODO: Re-enable when pod networking solution is implemented
-    # k8s_route_table_id         = module.networking.k8s_route_table_id
+    # k0s_route_table_id         = module.networking.k0s_route_table_id
     # route_table_summary        = module.networking.route_table_summary
   }
 }

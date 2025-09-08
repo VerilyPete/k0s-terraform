@@ -60,11 +60,10 @@ variable "vcn_id" {
   type        = string
 }
 
-# TODO: Re-enable when pod networking solution is implemented
-# variable "route_table_id" {
-#   description = "Route table ID for the private subnet (to add pod networking routes)"
-#   type        = string
-# }
+variable "route_table_id" {
+  description = "Route table ID for the private subnet (to add pod networking routes)"
+  type        = string
+}
 
 variable "image_id" {
   description = "Custom image OCID"
@@ -83,13 +82,13 @@ variable "tailscale_auth_key" {
 }
 
 # Kubernetes Network Configuration
-variable "k8s_cluster_cidr" {
+variable "k0s_cluster_cidr" {
   description = "CIDR block for Kubernetes pods"
   type        = string
   default     = "10.244.0.0/16"
 }
 
-variable "k8s_service_cidr" {
+variable "k0s_service_cidr" {
   description = "CIDR block for Kubernetes services"
   type        = string
   default     = "10.96.0.0/12"
@@ -143,7 +142,7 @@ variable "storage_volumes" {
   default = {
     "worker-storage" = {
       size_gb      = 50
-      display_name = "k8s-worker-1-data"
+      display_name = "k0s-worker-1-data"
       description  = "Primary storage for worker-1 with persistent volumes"
     }
   }

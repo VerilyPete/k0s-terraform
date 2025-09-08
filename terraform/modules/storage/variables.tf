@@ -28,7 +28,7 @@ variable "storage_volumes" {
   default = {
     "worker-storage" = {
       size_gb      = 50
-      display_name = "k8s-worker-1-data"
+      display_name = "k0s-worker-1-data"
       description  = "Primary storage for worker-1 with persistent volumes"
     }
   }

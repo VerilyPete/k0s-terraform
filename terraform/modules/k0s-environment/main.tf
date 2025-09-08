@@ -62,13 +62,13 @@ module "networking" {
   compartment_id      = var.compartment_id
   vcn_id              = var.vcn_id
   environment         = var.environment
-  k8s_cluster_cidr    = var.k8s_cluster_cidr
-  k8s_service_cidr    = var.k8s_service_cidr
+  k0s_cluster_cidr    = var.k0s_cluster_cidr
+  k0s_service_cidr    = var.k0s_service_cidr
   private_subnet_cidr = var.private_subnet_cidr
-  # TODO: Re-enable when pod networking solution is implemented
-  # route_table_id      = var.route_table_id
+  route_table_id      = var.route_table_id
   subnet_id           = var.subnet_id
   worker_private_ips  = module.compute.worker_private_ips
+  worker_pod_cidrs    = module.compute.worker_pod_cidrs
 
   depends_on = [module.compute]
 }

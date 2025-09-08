@@ -61,8 +61,8 @@ module "k0s_environment" {
   tailscale_auth_key = var.tailscale_auth_key
 
   # Network Configuration
-  k8s_cluster_cidr    = var.k8s_cluster_cidr
-  k8s_service_cidr    = var.k8s_service_cidr
+  k0s_cluster_cidr    = var.k0s_cluster_cidr
+  k0s_service_cidr    = var.k0s_service_cidr
   private_subnet_cidr = var.private_subnet_cidr
 
   # Instance Configuration

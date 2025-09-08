@@ -1,8 +1,8 @@
-# Security list for K8s cluster communication
-resource "oci_core_security_list" "k8s_cluster" {
+# Security list for k0s cluster communication
+resource "oci_core_security_list" "k0s_cluster" {
   compartment_id = var.compartment_id
   vcn_id         = var.vcn_id
-  display_name   = "k8s-cluster-security-list-${var.environment}"
+  display_name   = "k0s-cluster-security-list-${var.environment}"
 
   # Ingress rules
   ingress_security_rules {
@@ -19,7 +19,7 @@ resource "oci_core_security_list" "k8s_cluster" {
   }
 
   ingress_security_rules {
-    description = "K8s API server"
+    description = "k0s API server"
     protocol    = "6" # TCP
     source      = var.private_subnet_cidr
     source_type = "CIDR_BLOCK"
@@ -32,7 +32,7 @@ resource "oci_core_security_list" "k8s_cluster" {
   }
 
   ingress_security_rules {
-    description = "K8s controller join API"
+    description = "k0s controller join API"
     protocol    = "6" # TCP
     source      = var.private_subnet_cidr
     source_type = "CIDR_BLOCK"
@@ -99,7 +99,7 @@ resource "oci_core_security_list" "k8s_cluster" {
   ingress_security_rules {
     description = "Pod network communication"
     protocol    = "all"
-    source      = var.k8s_cluster_cidr
+    source      = var.k0s_cluster_cidr
     source_type = "CIDR_BLOCK"
     stateless   = false
   }
@@ -107,7 +107,7 @@ resource "oci_core_security_list" "k8s_cluster" {
   ingress_security_rules {
     description = "Service network communication"
     protocol    = "all"
-    source      = var.k8s_service_cidr
+    source      = var.k0s_service_cidr
     source_type = "CIDR_BLOCK"
     stateless   = false
   }
@@ -115,7 +115,7 @@ resource "oci_core_security_list" "k8s_cluster" {
   ingress_security_rules {
     description = "ICMP for pod network"
     protocol    = "1" # ICMP
-    source      = var.k8s_cluster_cidr
+    source      = var.k0s_cluster_cidr
     source_type = "CIDR_BLOCK"
     stateless   = false
   }
@@ -148,29 +148,54 @@ resource "oci_core_security_list" "k8s_cluster" {
   }
 }
 
-# TODO: OCI doesn't support routing to private IPs via route tables
-# Error: "Local VCN routes are read only and can only be created by OCI"
-# Pod networking will need to be handled at the instance level or via other means
+# Pod networking route rules - target instances, not private IPs
+data "oci_core_route_tables" "existing" {
+  compartment_id = var.compartment_id
+  vcn_id         = var.vcn_id
+  
+  filter {
+    name   = "id"
+    values = [var.route_table_id]
+  }
+}
 
-# Commented out - route table approach doesn't work for private IP targets
-# data "oci_core_route_tables" "existing" {
-#   compartment_id = var.compartment_id
-#   vcn_id         = var.vcn_id
-#   
-#   filter {
-#     name   = "id"
-#     values = [var.route_table_id]
-#   }
-# }
+# Create new route table with existing rules plus pod networking routes
+resource "oci_core_route_table" "k0s_pod_networking" {
+  compartment_id = var.compartment_id
+  vcn_id         = var.vcn_id
+  display_name   = "k0s-pod-networking-routes-${var.environment}"
 
-# locals {
-#   existing_route_table = data.oci_core_route_tables.existing.route_tables[0]
-# }
+  # Keep all existing route rules
+  dynamic "route_rules" {
+    for_each = length(data.oci_core_route_tables.existing.route_tables) > 0 ? data.oci_core_route_tables.existing.route_tables[0].route_rules : []
+    content {
+      destination       = route_rules.value.destination
+      destination_type  = route_rules.value.destination_type
+      network_entity_id = route_rules.value.network_entity_id
+      description       = route_rules.value.description
+    }
+  }
 
-# resource "oci_core_route_table" "k8s_pod_networking" {
-#   ...pod network route table creation...
-# }
+  # Add pod networking routes - map each worker's pod CIDR to its instance
+  dynamic "route_rules" {
+    for_each = var.worker_pod_cidrs
+    content {
+      destination       = route_rules.value.pod_cidr
+      destination_type  = "CIDR_BLOCK"
+      network_entity_id = route_rules.value.instance_id
+      description       = "Pod network for ${route_rules.key}"
+    }
+  }
 
-# resource "oci_core_route_table_attachment" "k8s_subnet" {
-#   ...subnet association...
-# }
+  freeform_tags = {
+    "Environment" = var.environment
+    "ManagedBy"   = "terraform"
+    "Purpose"     = "pod-networking"
+  }
+}
+
+# Associate the new route table with the subnet
+resource "oci_core_route_table_attachment" "k0s_subnet" {
+  subnet_id      = var.subnet_id
+  route_table_id = oci_core_route_table.k0s_pod_networking.id
+}

@@ -13,13 +13,13 @@ variable "environment" {
   type        = string
 }
 
-variable "k8s_cluster_cidr" {
+variable "k0s_cluster_cidr" {
   description = "CIDR block for Kubernetes cluster communication"
   type        = string
   default     = "10.244.0.0/16"
 }
 
-variable "k8s_service_cidr" {
+variable "k0s_service_cidr" {
   description = "CIDR block for Kubernetes services"
   type        = string
   default     = "10.96.0.0/12"
@@ -31,19 +31,27 @@ variable "private_subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
-# TODO: Re-enable when pod networking solution is implemented
-# variable "route_table_id" {
-#   description = "Route table ID to read existing routes from and replace with pod networking routes"
-#   type        = string
-# }
+variable "route_table_id" {
+  description = "Route table ID to read existing routes from and extend with pod networking routes"
+  type        = string
+}
 
 variable "subnet_id" {
   description = "Subnet ID to associate with the new route table"
   type        = string
 }
 
+variable "worker_pod_cidrs" {
+  description = "Map of worker pod CIDRs to instance IDs for route creation"
+  type = map(object({
+    pod_cidr    = string
+    instance_id = string
+  }))
+  default = {}
+}
+
 variable "worker_private_ips" {
-  description = "List of private IPs for K8s worker nodes"
+  description = "List of private IPs for k0s worker nodes"
   type        = list(string)
   default     = []
 }

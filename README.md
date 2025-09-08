@@ -20,7 +20,7 @@ k0s-terraform/
 │   ├── workflows/
 │   │   ├── terraform-plan.yml
 │   │   ├── terraform-apply.yml
-│   │   ├── k8s-deploy.yml
+│   │   ├── k0s-deploy.yml
 │   │   └── destroy-environment.yml
 │   └── actions/
 │       └── setup-connectivity/

@@ -1,4 +1,4 @@
-name: 'K8s Cluster Setup and App Deployment'
+name: 'k0s Cluster Setup and App Deployment'
 
 on:
   workflow_call:
@@ -15,7 +15,7 @@ on:
     outputs:
       deployment_status:
         description: "Deployment completion status"
-        value: ${{ jobs.k8s-deployment.outputs.status }}
+        value: ${{ jobs.k0s-deployment.outputs.status }}
 
   workflow_dispatch:
     inputs:
@@ -41,7 +41,7 @@ env:
   OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
 
 jobs:
-  k8s-deployment:
+  k0s-deployment:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -65,7 +65,7 @@ jobs:
           echo ""
 
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          NODES=("k8s-controller-$ENVIRONMENT" "k8s-worker-1-$ENVIRONMENT" "k8s-worker-2-$ENVIRONMENT")
+          NODES=("k0s-controller-$ENVIRONMENT" "k0s-worker-1-$ENVIRONMENT" "k0s-worker-2-$ENVIRONMENT")
           READY_NODES=()
           MAX_WAIT_TIME=900  # 15 minutes maximum
           CHECK_INTERVAL=20  # Check every 20 seconds
@@ -143,9 +143,9 @@ jobs:
         if: github.event.inputs.skip_cluster_setup != 'true'
         run: |
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
           
-          echo "Setting up K8s cluster on $CONTROLLER..."
+          echo "Setting up k0s cluster on $CONTROLLER..."
           
           # Wait for controller to be fully ready
           echo "Waiting for k0s controller to be ready..."
@@ -350,9 +350,9 @@ jobs:
           }
 
           # Join workers in background
-          join_worker "k8s-worker-1-$ENVIRONMENT" &
+          join_worker "k0s-worker-1-$ENVIRONMENT" &
           PID1=$!
-          join_worker "k8s-worker-2-$ENVIRONMENT" &
+          join_worker "k0s-worker-2-$ENVIRONMENT" &
           PID2=$!
 
           # Wait for both workers
@@ -363,7 +363,7 @@ jobs:
       - name: Verify cluster
         run: |
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
           
           echo "Verifying cluster state..."
           
@@ -400,19 +400,19 @@ jobs:
       - name: Configure cluster
         run: |
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
           
           echo "Configuring cluster nodes and storage..."
           
           ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << EOF
             # Wait for nodes to be ready
-            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k8s-worker-1-$ENVIRONMENT --timeout=120s
-            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k8s-worker-2-$ENVIRONMENT --timeout=120s
+            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k0s-worker-1-$ENVIRONMENT --timeout=120s
+            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k0s-worker-2-$ENVIRONMENT --timeout=120s
 
             # Label nodes
-            sudo /usr/local/bin/k0s kubectl label node k8s-worker-1-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite
-            sudo /usr/local/bin/k0s kubectl label node k8s-worker-2-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite
-            sudo /usr/local/bin/k0s kubectl label node k8s-worker-1-$ENVIRONMENT storage=local --overwrite
+            sudo /usr/local/bin/k0s kubectl label node k0s-worker-1-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite
+            sudo /usr/local/bin/k0s kubectl label node k0s-worker-2-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite
+            sudo /usr/local/bin/k0s kubectl label node k0s-worker-1-$ENVIRONMENT storage=local --overwrite
 
             echo "✅ Cluster configuration complete"
           EOF
@@ -420,7 +420,7 @@ jobs:
       - name: Deploy applications via Helm
         run: |
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
           
           echo "Deploying applications via Helm..."
           
@@ -453,7 +453,7 @@ jobs:
               --set=cloudflare.apiToken="${{ secrets.CLOUDFLARE_K0S_TOKEN }}" \\
               --set=cloudflare.accountId="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \\
               --set=cloudflare.tunnelName="webserver-$ENVIRONMENT" \\
-              --set=nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
+              --set=nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\
               --timeout=300s
 
             # Deploy webserver application
@@ -468,9 +468,9 @@ jobs:
             helm upgrade --install --wait \\
               -n monitoring --create-namespace \\
               monitoring prometheus-community/kube-prometheus-stack \\
-              --set prometheus.prometheusSpec.nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
-              --set grafana.nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
-              --set alertmanager.alertmanagerSpec.nodeSelector."kubernetes\\.io/hostname"="k8s-worker-1-$ENVIRONMENT" \\
+              --set prometheus.prometheusSpec.nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\
+              --set grafana.nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\
+              --set alertmanager.alertmanagerSpec.nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\
               --timeout=600s
 
             echo "✅ All applications deployed successfully"
@@ -479,7 +479,7 @@ jobs:
       - name: Verify deployment
         run: |
           ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
-          CONTROLLER="k8s-controller-$ENVIRONMENT"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
           
           echo "Verifying deployment..."
           
@@ -501,7 +501,7 @@ jobs:
         id: deployment_status
         run: |
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "✅ K8s cluster deployment completed successfully"
+          echo "✅ k0s cluster deployment completed successfully"
 
       - name: Display summary
         run: |
@@ -512,7 +512,7 @@ jobs:
           echo "========================================="
           echo ""
           echo "🖥️  Cluster Access:"
-          echo "  SSH: ssh opc@k8s-controller-$ENVIRONMENT"
+          echo "  SSH: ssh opc@k0s-controller-$ENVIRONMENT"
           echo "  Kubectl: sudo /usr/local/bin/k0s kubectl get pods -A"
           echo ""
           echo "🌐 Application:"

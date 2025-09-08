@@ -21,8 +21,8 @@ ssh_private_key    = "-----BEGIN OPENSSH PRIVATE KEY-----\nYOUR_PRIVATE_KEY_CONT
 tailscale_auth_key = "tskey-auth-..."
 
 # Network Configuration (optional overrides)
-# k8s_cluster_cidr    = "10.244.0.0/16"
-# k8s_service_cidr    = "10.96.0.0/12" 
+# k0s_cluster_cidr    = "10.244.0.0/16"
+# k0s_service_cidr    = "10.96.0.0/12" 
 # private_subnet_cidr = "10.0.1.0/24"
 
 # Resource Configuration
@@ -40,7 +40,7 @@ tailscale_auth_key = "tskey-auth-..."
 # storage_volumes = {
 #   "worker-storage" = {
 #     size_gb      = 50
-#     display_name = "k8s-worker-1-data"
+#     display_name = "k0s-worker-1-data"
 #     description  = "Primary storage for worker-1"
 #   }
 # }
