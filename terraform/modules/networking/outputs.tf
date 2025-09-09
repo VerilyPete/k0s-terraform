@@ -11,28 +11,8 @@ output "security_list_rules_summary" {
   }
 }
 
-output "k8s_route_table_id" {
-  description = "ID of the route table with pod networking routes"
-  value       = oci_core_route_table.k0s_pod_networking.id
-}
-
-output "route_table_summary" {
-  description = "Summary of route table configuration"
-  value = {
-    id              = oci_core_route_table.k0s_pod_networking.id
-    display_name    = oci_core_route_table.k0s_pod_networking.display_name
-    route_count     = length(oci_core_route_table.k0s_pod_networking.route_rules)
-    existing_routes = length(data.oci_core_route_tables.existing.route_tables) > 0 ? length(data.oci_core_route_tables.existing.route_tables[0].route_rules) : 0
-    pod_routes      = length(var.worker_pod_cidrs)
-  }
-}
-
-output "pod_networking_routes" {
-  description = "Pod networking routes that were created"
-  value = {
-    for k, v in var.worker_pod_cidrs : k => {
-      destination = v.pod_cidr
-      target      = v.instance_id
-    }
-  }
-}
+# Route table outputs removed - OCI doesn't support instance-targeted routes
+# Pod networking will need to be handled via:
+# 1. Manual OCI Console route configuration
+# 2. Instance-level routing scripts
+# 3. Overlay CNI plugins

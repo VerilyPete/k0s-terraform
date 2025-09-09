@@ -31,24 +31,13 @@ variable "private_subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
-variable "route_table_id" {
-  description = "Route table ID to read existing routes from and extend with pod networking routes"
-  type        = string
-}
-
 variable "subnet_id" {
-  description = "Subnet ID to associate with the new route table"
+  description = "Subnet ID for reference (route table approach not supported)"
   type        = string
 }
 
-variable "worker_pod_cidrs" {
-  description = "Map of worker pod CIDRs to instance IDs for route creation"
-  type = map(object({
-    pod_cidr    = string
-    instance_id = string
-  }))
-  default = {}
-}
+# Removed route_table_id and worker_pod_cidrs variables
+# OCI route tables cannot target instances directly
 
 variable "worker_private_ips" {
   description = "List of private IPs for k0s worker nodes"

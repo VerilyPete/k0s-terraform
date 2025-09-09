@@ -70,7 +70,4 @@ variable "storage_volume_ids" {
   default     = {}
 }
 
-variable "vcn_id" {
-  description = "OCI VCN ID for OCI Cloud Controller Manager"
-  type        = string
-}
+# OCI CCM variables removed - not needed

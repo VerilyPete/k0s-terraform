@@ -12,14 +12,7 @@ data "oci_identity_availability_domains" "ads" {
   compartment_id = var.compartment_id
 }
 
-# IAM module for OCI Cloud Controller Manager permissions
-module "iam" {
-  source = "../iam"
-
-  tenancy_ocid   = var.tenancy_ocid
-  compartment_id = var.compartment_id
-  environment    = var.environment
-}
+# IAM module removed - OCI CCM not needed
 
 # Storage module
 module "storage" {
@@ -48,7 +41,7 @@ module "compute" {
   worker_shape_config   = var.worker_shape_config
   worker_count          = var.worker_count
   storage_volume_ids    = module.storage.volume_ids
-  vcn_id                = var.vcn_id
+# vcn_id removed - OCI CCM not needed
 
   depends_on = [
     module.storage
@@ -65,10 +58,8 @@ module "networking" {
   k0s_cluster_cidr    = var.k0s_cluster_cidr
   k0s_service_cidr    = var.k0s_service_cidr
   private_subnet_cidr = var.private_subnet_cidr
-  route_table_id      = var.route_table_id
   subnet_id           = var.subnet_id
   worker_private_ips  = module.compute.worker_private_ips
-  worker_pod_cidrs    = module.compute.worker_pod_cidrs
 
   depends_on = [module.compute]
 }

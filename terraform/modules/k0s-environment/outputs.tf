@@ -81,12 +81,4 @@ output "networking" {
   }
 }
 
-output "iam" {
-  description = "IAM module outputs for OCI Cloud Controller Manager"
-  value = {
-    dynamic_group_id   = module.iam.dynamic_group_id
-    dynamic_group_name = module.iam.dynamic_group_name
-    ccm_policy_id      = module.iam.ccm_policy_id
-    ccm_policy_name    = module.iam.ccm_policy_name
-  }
-}
+# IAM outputs removed - OCI CCM not needed

@@ -148,54 +148,9 @@ resource "oci_core_security_list" "k0s_cluster" {
   }
 }
 
-# Pod networking route rules - target instances, not private IPs
-data "oci_core_route_tables" "existing" {
-  compartment_id = var.compartment_id
-  vcn_id         = var.vcn_id
-  
-  filter {
-    name   = "id"
-    values = [var.route_table_id]
-  }
-}
-
-# Create new route table with existing rules plus pod networking routes
-resource "oci_core_route_table" "k0s_pod_networking" {
-  compartment_id = var.compartment_id
-  vcn_id         = var.vcn_id
-  display_name   = "k0s-pod-networking-routes-${var.environment}"
-
-  # Keep all existing route rules
-  dynamic "route_rules" {
-    for_each = length(data.oci_core_route_tables.existing.route_tables) > 0 ? data.oci_core_route_tables.existing.route_tables[0].route_rules : []
-    content {
-      destination       = route_rules.value.destination
-      destination_type  = route_rules.value.destination_type
-      network_entity_id = route_rules.value.network_entity_id
-      description       = route_rules.value.description
-    }
-  }
-
-  # Add pod networking routes - map each worker's pod CIDR to its instance
-  dynamic "route_rules" {
-    for_each = var.worker_pod_cidrs
-    content {
-      destination       = route_rules.value.pod_cidr
-      destination_type  = "CIDR_BLOCK"
-      network_entity_id = route_rules.value.instance_id
-      description       = "Pod network for ${route_rules.key}"
-    }
-  }
-
-  freeform_tags = {
-    "Environment" = var.environment
-    "ManagedBy"   = "terraform"
-    "Purpose"     = "pod-networking"
-  }
-}
-
-# Associate the new route table with the subnet
-resource "oci_core_route_table_attachment" "k0s_subnet" {
-  subnet_id      = var.subnet_id
-  route_table_id = oci_core_route_table.k0s_pod_networking.id
-}
+# NOTE: OCI route tables cannot target instances directly
+# Route-based pod networking is not supported in OCI
+# Alternative approaches:
+# 1. Manual route configuration in OCI Console
+# 2. Instance-level routing using ip route commands
+# 3. Overlay CNI plugins (Flannel, Calico)

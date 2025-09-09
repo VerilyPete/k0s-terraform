@@ -31,8 +31,7 @@ resource "oci_core_instance" "controller" {
       hostname           = "k0s-controller-${var.environment}"
       tailscale_auth_key = var.tailscale_auth_key
       environment        = var.environment
-      compartment_id     = var.compartment_id
-      vcn_id            = var.vcn_id
+# OCI CCM variables removed - not needed
     }))
   }
 

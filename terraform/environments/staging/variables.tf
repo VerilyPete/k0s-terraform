@@ -50,10 +50,7 @@ variable "vcn_id" {
   type        = string
 }
 
-variable "route_table_id" {
-  description = "Route table ID for the private subnet (to add pod networking routes)"
-  type        = string
-}
+# Removed route_table_id variable - OCI route tables cannot target instances
 
 variable "image_id" {
   description = "Custom image OCID"

@@ -45,15 +45,7 @@ output "worker_private_ips" {
   value = [for instance in oci_core_instance.workers : instance.private_ip]
 }
 
-output "worker_pod_cidrs" {
-  description = "Map of worker pod CIDRs to instance IDs for route creation"
-  value = {
-    for k, v in oci_core_instance.workers : k => {
-      pod_cidr    = "10.244.${index(keys(oci_core_instance.workers), k)}.0/24"
-      instance_id = v.id
-    }
-  }
-}
+# Removed worker_pod_cidrs output - OCI route tables cannot target instances
 
 output "cluster_info" {
   description = "Combined cluster information for easy reference"

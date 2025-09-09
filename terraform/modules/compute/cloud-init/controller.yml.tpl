@@ -251,70 +251,7 @@ write_files:
 
       echo "=== Tailscale Installation Complete ==="
 
-  - path: /usr/local/bin/setup-oci-ccm.sh
-    permissions: "0755"
-    content: |
-      #!/bin/bash
-      set -euo pipefail
-
-      echo "=== Setting up OCI Cloud Controller Manager ==="
-
-      # Wait for k0s cluster to be fully ready
-      echo "Waiting for k0s cluster to be ready..."
-      for i in {1..30}; do
-        if k0s kubectl get nodes >/dev/null 2>&1; then
-          echo "Cluster is ready!"
-          break
-        fi
-        echo "Waiting for cluster... ($i/30)"
-        sleep 10
-      done
-
-      # Verify cluster is ready
-      if ! k0s kubectl get nodes >/dev/null 2>&1; then
-        echo "ERROR: Cluster not ready after 5 minutes"
-        exit 1
-      fi
-
-      # Install OCI Cloud Controller Manager
-      echo "Installing OCI Cloud Controller Manager..."
-      k0s kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.33.0/oci-cloud-controller-manager.yaml
-
-      # Wait for CCM deployment to be created
-      echo "Waiting for CCM deployment to be created..."
-      for i in {1..12}; do
-        if k0s kubectl get deployment oci-cloud-controller-manager -n kube-system >/dev/null 2>&1; then
-          echo "CCM deployment created!"
-          break
-        fi
-        echo "Waiting for CCM deployment... ($i/12)"
-        sleep 5
-      done
-
-      # Create OCI configuration secret
-      echo "Creating OCI CCM configuration..."
-      k0s kubectl create secret generic oci-cloud-controller-manager \
-        --from-literal=cloud-provider.yaml="$(cat <<EOF
-      compartment: ${compartment_id}
-      vcn: ${vcn_id}
-      loadBalancer:
-        disabled: true
-      routeController:
-        enabled: true
-        useInstancePrincipals: true
-      EOF
-      )" -n kube-system --dry-run=client -o yaml | k0s kubectl apply -f -
-
-      # Restart CCM to pick up the new configuration
-      echo "Restarting CCM to apply configuration..."
-      k0s kubectl rollout restart daemonset/oci-cloud-controller-manager -n kube-system
-
-      # Wait for CCM to be ready
-      echo "Waiting for CCM to be ready..."
-      k0s kubectl rollout status daemonset/oci-cloud-controller-manager -n kube-system --timeout=300s
-
-      echo "=== OCI Cloud Controller Manager setup complete ==="
-      echo "CCM will automatically manage route tables for pod networking"
+# OCI Cloud Controller Manager removed - not supported for route management
 
 runcmd:
   # Verify hostname was set correctly by cloud-init
@@ -392,15 +329,6 @@ runcmd:
       exit $EXIT_CODE
     fi
 
-  # Setup OCI Cloud Controller Manager
-  - |
-    echo "=== Starting OCI CCM Setup at $(date) ===" | tee -a /var/log/cloud-init-k0s.log
-    /usr/local/bin/setup-oci-ccm.sh 2>&1 | tee -a /var/log/cloud-init-k0s.log
-    EXIT_CODE=$${PIPESTATUS[0]}
-    echo "=== OCI CCM Setup completed with exit code: $EXIT_CODE at $(date) ===" | tee -a /var/log/cloud-init-k0s.log
-    if [ $EXIT_CODE -ne 0 ]; then
-      echo "WARNING: OCI CCM setup failed - pod networking may not work across nodes" | tee -a /var/log/cloud-init-k0s.log
-      # Don't exit on CCM failure - cluster can still function
-    fi
+# OCI Cloud Controller Manager setup removed - not supported
 
-final_message: "K0s controller node ready for ${environment} environment with OCI CCM! Check logs: /var/log/k0s-controller-setup.log and /var/log/cloud-init-k0s.log"
+final_message: "K0s controller node ready for ${environment} environment! Check logs: /var/log/k0s-controller-setup.log and /var/log/cloud-init-k0s.log"
