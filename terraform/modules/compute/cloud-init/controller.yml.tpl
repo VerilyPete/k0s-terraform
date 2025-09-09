@@ -251,7 +251,7 @@ write_files:
 
       echo "=== Tailscale Installation Complete ==="
 
-# OCI Cloud Controller Manager removed - not supported for route management
+# Pod networking routes removed - kube-router handles instance routes, OCI Console handles VCN routes
 
 runcmd:
   # Verify hostname was set correctly by cloud-init
@@ -329,6 +329,6 @@ runcmd:
       exit $EXIT_CODE
     fi
 
-# OCI Cloud Controller Manager setup removed - not supported
+# Pod networking routes removed - handled by kube-router + OCI Console routes
 
 final_message: "K0s controller node ready for ${environment} environment! Check logs: /var/log/k0s-controller-setup.log and /var/log/cloud-init-k0s.log"

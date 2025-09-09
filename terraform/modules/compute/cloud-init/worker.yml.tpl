@@ -106,6 +106,8 @@ write_files:
 
       echo "=== Tailscale Installation Complete ==="
 
+# Pod networking routes removed - kube-router handles instance routes, OCI Console handles VCN routes
+
 runcmd:
   # Verify hostname was set correctly by cloud-init
   - |
@@ -159,5 +161,7 @@ runcmd:
 
   # Setup k0s worker (ready for join)
   - /usr/local/bin/setup-k0s-worker.sh
+
+# Pod networking routes removed - handled by kube-router + OCI Console routes
 
 final_message: "K0s worker node ready for ${environment} environment!"

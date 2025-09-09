@@ -537,7 +537,7 @@ jobs:
           echo "============================================="
 
   # Call the K8s deployment workflow only if infrastructure was applied/changed
-  k0sdeployment:
+  k0s-deployment:
     if: github.event.inputs.destroy != 'true' && needs.terraform-apply.outputs.controller_ip != ''
     needs: terraform-apply
     uses: ./.github/workflows/k0s-deploy.yml
