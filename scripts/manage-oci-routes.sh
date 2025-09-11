@@ -209,13 +209,16 @@ get_pod_cidrs() {
     local controller_ip="$1"
     local environment="$2"
     
-    log "Connecting to k0s controller at $controller_ip to get pod CIDR assignments..."
+    # Use Tailscale hostname instead of IP address for connection
+    local controller_hostname="k0s-controller-$environment"
+    log "Connecting to k0s controller at $controller_hostname (Tailscale) to get pod CIDR assignments..."
     
-    # Try to get node information via SSH
+    # Try to get node information via SSH using Tailscale hostname
     local node_info
-    if ! node_info=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "opc@$controller_ip" \
+    if ! node_info=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "opc@$controller_hostname" \
         "k0s kubectl get nodes -o json" 2>/dev/null); then
         error "Failed to connect to k0s controller or get node information"
+        error "Make sure Tailscale connectivity is established and controller hostname is accessible: $controller_hostname"
         return 1
     fi
     

@@ -57,6 +57,10 @@ on:
         required: true
       OCI_SERVICE_GATEWAY:
         required: true
+      SSH_PRIVATE_KEY:
+        required: true
+      TAILSCALE_AUTH_KEY:
+        required: true
 
 permissions:
   contents: read
@@ -139,15 +143,12 @@ jobs:
             echo "✅ Will auto-discover controller IP from OCI subnet"
           fi
 
-      - name: Setup SSH for controller access
+      - name: Setup connectivity for controller access
         if: steps.params.outputs.action == 'configure'
-        run: |
-          # Setup SSH key for accessing the controller
-          mkdir -p ~/.ssh
-          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-          
-          # Note: SSH private key would need to be added as a secret for controller access
-          # For now, the script will attempt to auto-discover and connect
+        uses: ./.github/actions/setup-connectivity
+        with:
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          tailscale_auth_key: ${{ secrets.TAILSCALE_AUTH_KEY }}
 
       - name: Execute route management
         id: route_management
