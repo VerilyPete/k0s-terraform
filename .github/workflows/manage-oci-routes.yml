@@ -1,0 +1,193 @@
+name: 'Manage OCI Routes'
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to manage routes for'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - configure
+          - reset
+          - destroy
+        default: 'configure'
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to manage routes for'
+        required: true
+        type: string
+      action:
+        description: 'Action to perform (configure, reset, destroy)'
+        required: true
+        type: string
+        default: 'configure'
+      controller_ip:
+        description: 'Controller IP address (required for configure action)'
+        required: false
+        type: string
+    secrets:
+      OCI_CLI_USER:
+        required: true
+      OCI_CLI_TENANCY:
+        required: true
+      OCI_CLI_FINGERPRINT:
+        required: true
+      OCI_CLI_KEY_CONTENT:
+        required: true
+      OCI_CLI_REGION:
+        required: true
+      OCI_COMPARTMENT_ID:
+        required: true
+      OCI_PRIVATE_SUBNET:
+        required: true
+      OCI_ROUTE_TABLE_STAGING:
+        required: true
+      OCI_ROUTE_TABLE_PRODUCTION:
+        required: true
+      OCI_NAT_GATEWAY:
+        required: true
+      OCI_SERVICE_GATEWAY:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+  OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+
+jobs:
+  manage-routes:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup OCI CLI
+        run: |
+          # Install OCI CLI
+          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh > install.sh
+          chmod +x install.sh
+          ./install.sh --accept-all-defaults
+          rm install.sh
+          
+          # Configure OCI CLI
+          mkdir -p /home/runner/.oci
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /home/runner/.oci/oci_api_key.pem
+          chmod 600 /home/runner/.oci/oci_api_key.pem
+          
+          cat > /home/runner/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          region=${{ secrets.OCI_CLI_REGION }}
+          key_file=/home/runner/.oci/oci_api_key.pem
+          EOF
+          
+          chmod 600 /home/runner/.oci/config
+
+      - name: Determine environment and action
+        id: params
+        run: |
+          # Set environment and action from inputs
+          ENV="${{ inputs.environment || github.event.inputs.environment }}"
+          ACTION="${{ inputs.action || github.event.inputs.action }}"
+          CONTROLLER_IP="${{ inputs.controller_ip }}"
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "action=$ACTION" >> $GITHUB_OUTPUT
+          echo "controller_ip=$CONTROLLER_IP" >> $GITHUB_OUTPUT
+          
+          # Set route table ID based on environment
+          if [ "$ENV" = "staging" ]; then
+            echo "route_table_id=${{ secrets.OCI_ROUTE_TABLE_STAGING }}" >> $GITHUB_OUTPUT
+          elif [ "$ENV" = "production" ]; then
+            echo "route_table_id=${{ secrets.OCI_ROUTE_TABLE_PRODUCTION }}" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Invalid environment: $ENV"
+            exit 1
+          fi
+          
+          echo "🎯 Route Management Parameters:"
+          echo "  Environment: $ENV"
+          echo "  Action: $ACTION"
+          echo "  Controller IP: ${CONTROLLER_IP:-'(auto-discover)'}"
+
+      - name: Validate configuration action requirements
+        if: steps.params.outputs.action == 'configure'
+        run: |
+          if [ "${{ steps.params.outputs.action }}" = "configure" ] && [ -z "${{ steps.params.outputs.controller_ip }}" ]; then
+            echo "⚠️  Configure action requested but no controller IP provided"
+            echo "✅ Will auto-discover controller IP from OCI subnet"
+          fi
+
+      - name: Setup SSH for controller access
+        if: steps.params.outputs.action == 'configure'
+        run: |
+          # Setup SSH key for accessing the controller
+          mkdir -p ~/.ssh
+          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Note: SSH private key would need to be added as a secret for controller access
+          # For now, the script will attempt to auto-discover and connect
+
+      - name: Execute route management
+        id: route_management
+        env:
+          CONTROLLER_IP: ${{ steps.params.outputs.controller_ip }}
+        run: |
+          echo "🚀 Executing route management for ${{ steps.params.outputs.environment }}"
+          echo "📋 Action: ${{ steps.params.outputs.action }}"
+          echo "🗂️  Route Table: ${{ steps.params.outputs.route_table_id }}"
+          echo ""
+          
+          # Make script executable
+          chmod +x scripts/manage-oci-routes.sh
+          
+          # Execute the route management script
+          ./scripts/manage-oci-routes.sh \
+            "${{ steps.params.outputs.action }}" \
+            "${{ steps.params.outputs.environment }}" \
+            "${{ steps.params.outputs.route_table_id }}" \
+            "${{ secrets.OCI_PRIVATE_SUBNET }}" \
+            "${{ secrets.OCI_NAT_GATEWAY }}" \
+            "${{ secrets.OCI_SERVICE_GATEWAY }}"
+
+      - name: Route Management Summary
+        run: |
+          echo "============================================="
+          case "${{ steps.params.outputs.action }}" in
+            "configure")
+              echo "🎉 Route Configuration Complete - ${{ steps.params.outputs.environment }}"
+              echo "============================================="
+              echo ""
+              echo "✅ Pod network routes have been configured"
+              echo "🔗 Route table: ${{ steps.params.outputs.route_table_id }}"
+              echo "🌐 Environment: ${{ steps.params.outputs.environment }}"
+              ;;
+            "reset"|"destroy")
+              echo "🧹 Route Reset Complete - ${{ steps.params.outputs.environment }}"
+              echo "============================================="
+              echo ""
+              echo "✅ Route table has been reset to base configuration"
+              echo "🔗 Route table: ${{ steps.params.outputs.route_table_id }}"
+              echo "🌐 Environment: ${{ steps.params.outputs.environment }}"
+              ;;
+          esac
+          echo "============================================="

@@ -94,12 +94,20 @@ jobs:
           availability_domain = "${{ secrets.OCI_AVAILABILITY_DOMAIN }}"
           subnet_id          = "${{ secrets.OCI_PRIVATE_SUBNET }}"
           vcn_id             = "${{ secrets.OCI_VCN_ID }}"
+          route_table_id     = "${{ github.event.inputs.environment == 'staging' && secrets.OCI_ROUTE_TABLE_STAGING || secrets.OCI_ROUTE_TABLE_PRODUCTION }}"
           image_id           = "${{ secrets.OCI_CUSTOM_IMAGE }}"
           ssh_public_key     = "${{ secrets.SSH_PUBLIC_KEY }}"
           tailscale_auth_key = "${{ secrets.TAILSCALE_AUTH_KEY }}"
           EOF
           
           # ssh_private_key removed - no longer using provisioners
+
+      - name: Reset route table before destroy
+        uses: ./.github/workflows/manage-oci-routes.yml
+        with:
+          environment: ${{ github.event.inputs.environment }}
+          action: 'destroy'
+        secrets: inherit
 
       - name: Clean up Tailscale entries before destroy
         run: |

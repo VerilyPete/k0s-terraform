@@ -53,7 +53,7 @@ module "k0s_environment" {
   # Infrastructure Configuration
   subnet_id       = var.subnet_id
   vcn_id          = var.vcn_id
-  # route_table_id removed - OCI doesn't support instance-targeted routes
+  route_table_id  = var.route_table_id
   image_id        = var.image_id
 
   # Access Configuration
