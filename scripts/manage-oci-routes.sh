@@ -211,6 +211,18 @@ get_pod_cidrs() {
     local controller_hostname="k0s-controller-$environment"
     log "Connecting to k0s controller at $controller_hostname (Tailscale) to get pod CIDR assignments..."
     
+    # Force immediate output and add basic connectivity test
+    echo "DEBUG: About to test connectivity to $controller_hostname"
+    echo "DEBUG: Current time: $(date)"
+    echo "DEBUG: Tailscale status:"
+    sudo tailscale status | grep "$controller_hostname" || echo "Controller not found in Tailscale status"
+    
+    echo "DEBUG: Testing basic SSH connectivity..."
+    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "opc@$controller_hostname" "echo 'SSH test successful'; hostname; whoami" 2>&1 || echo "SSH test failed"
+    
+    echo "DEBUG: Testing k0s binary existence..."
+    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "opc@$controller_hostname" "ls -la /usr/local/bin/k0s; /usr/local/bin/k0s version" 2>&1 || echo "k0s binary test failed"
+    
     # Test basic connectivity first
     log "Testing connectivity to $controller_hostname..."
     log "Running: ping -c 3 -W 10 $controller_hostname"
