@@ -178,28 +178,44 @@ jobs:
             exit 1
           }
 
-          echo "Checking token file status..."
-          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "ls -la /tmp/worker-token.txt" || {
-            echo "❌ Token file not found, checking setup logs..."
-            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo tail -20 /var/log/k0s-controller-setup.log" || echo "No setup log found"                                                                              
-            exit 1
-          }
-
-          echo "Reading token file..."
-          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "cat /tmp/worker-token.txt")
-          COMMAND_EXIT_CODE=$?
+          echo "Retrieving worker join token..."
+          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "cat /tmp/worker-token.txt" 2>/dev/null || true)
           
-          JOIN_TOKEN=$(echo "$JOIN_TOKEN" | tr -d '\n\r')
+          if [ -n "$JOIN_TOKEN" ]; then
+            JOIN_TOKEN=$(echo "$JOIN_TOKEN" | tr -d '\n\r')
+            if [ ${#JOIN_TOKEN} -gt 10 ]; then
+              echo "✅ Using existing token from /tmp/worker-token.txt (${#JOIN_TOKEN} characters)"
+              echo "Token preview (first 50 chars): ${JOIN_TOKEN:0:50}..."
+            else
+              echo "⚠️  Existing token file is empty or invalid, generating new one"
+              JOIN_TOKEN=""
+            fi
+          else
+            echo "ℹ️  Could not read existing token file, generating new one"
+            JOIN_TOKEN=""
+          fi
 
-          echo "Token read command exit code: $COMMAND_EXIT_CODE"
-          echo "Token length: ${#JOIN_TOKEN}"
-          echo "Token preview (first 50 chars): ${JOIN_TOKEN:0:50}..."
-
+          # Generate new token if needed
           if [ -z "$JOIN_TOKEN" ]; then
-            echo "❌ Token is empty"
-            echo "Checking if file exists and has content..."
-            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "wc -l /tmp/worker-token.txt; head -1 /tmp/worker-token.txt"                                                                                                
-            exit 1
+            echo "📝 Generating new worker join token..."
+            JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s token create --role=worker --expiry=48h" 2>/dev/null)
+            
+            if [ -z "$JOIN_TOKEN" ]; then
+              echo "❌ Failed to generate worker token"
+              echo "Checking k0s controller status..."
+              ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo systemctl status k0scontroller --no-pager -l" || true
+              echo "Checking if k0s API is available..."
+              ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes" || true
+              exit 1
+            fi
+            
+            JOIN_TOKEN=$(echo "$JOIN_TOKEN" | tr -d '\n\r')
+            echo "✅ New token generated (${#JOIN_TOKEN} characters)"
+            echo "Token preview (first 50 chars): ${JOIN_TOKEN:0:50}..."
+            
+            # Save the token for future use
+            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "echo '$JOIN_TOKEN' > /tmp/worker-token.txt && chmod 644 /tmp/worker-token.txt" || true
+            echo "✅ Token saved to /tmp/worker-token.txt"
           fi
 
           # Join workers in parallel
