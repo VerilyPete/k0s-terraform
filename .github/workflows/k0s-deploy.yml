@@ -201,7 +201,7 @@ jobs:
           environment: ${{ inputs.environment }}
           action: 'configure'
           controller_ip: ${{ inputs.controller_ip }}
-        secrets: inherit
+          secrets: inherit
 
       - name: Verify cluster connectivity
         run: |

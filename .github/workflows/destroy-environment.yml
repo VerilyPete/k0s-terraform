@@ -107,7 +107,7 @@ jobs:
         with:
           environment: ${{ github.event.inputs.environment }}
           action: 'destroy'
-        secrets: inherit
+          secrets: inherit
 
       - name: Clean up Tailscale entries before destroy
         run: |
