@@ -205,10 +205,13 @@ get_private_ips() {
 
 # Function to get pod CIDR assignments from k0s cluster
 get_pod_cidrs() {
+    echo "DEBUG: ENTERED get_pod_cidrs function with environment: '$1'"
     local environment="$1"
+    echo "DEBUG: Set environment variable to: '$environment'"
     
     # Use Tailscale hostname instead of IP address for connection
     local controller_hostname="k0s-controller-$environment"
+    echo "DEBUG: Set controller_hostname to: '$controller_hostname'"
     log "Connecting to k0s controller at $controller_hostname (Tailscale) to get pod CIDR assignments..."
     
     # Force immediate output and add basic connectivity test
