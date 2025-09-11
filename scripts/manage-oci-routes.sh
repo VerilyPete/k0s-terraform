@@ -71,6 +71,61 @@ check_dependencies() {
     fi
 }
 
+# Function to validate OCID format
+validate_ocid() {
+    local ocid="$1"
+    local name="$2"
+    
+    if [ -z "$ocid" ]; then
+        error "$name is empty or not provided"
+        return 1
+    fi
+    
+    if [[ ! "$ocid" =~ ^ocid1\. ]]; then
+        error "$name does not appear to be a valid OCID (should start with 'ocid1.'): $ocid"
+        return 1
+    fi
+    
+    log "✅ $name validation passed: ${ocid:0:20}..."
+    return 0
+}
+
+# Function to validate input parameters
+validate_parameters() {
+    local route_table_id="$1"
+    local subnet_id="$2"
+    local nat_gateway_id="$3"
+    local service_gateway_id="$4"
+    
+    log "Validating input parameters..."
+    
+    local validation_failed=false
+    
+    if ! validate_ocid "$route_table_id" "Route Table ID"; then
+        validation_failed=true
+    fi
+    
+    if ! validate_ocid "$subnet_id" "Subnet ID"; then
+        validation_failed=true
+    fi
+    
+    if ! validate_ocid "$nat_gateway_id" "NAT Gateway ID"; then
+        validation_failed=true
+    fi
+    
+    if ! validate_ocid "$service_gateway_id" "Service Gateway ID"; then
+        validation_failed=true
+    fi
+    
+    if [ "$validation_failed" = true ]; then
+        error "Parameter validation failed. Please check your GitHub secrets and ensure they contain valid OCID values."
+        error "Required secrets: OCI_ROUTE_TABLE_STAGING/PRODUCTION, OCI_PRIVATE_SUBNET, OCI_NAT_GATEWAY, OCI_SERVICE_GATEWAY"
+        exit 1
+    fi
+    
+    log "✅ All parameters validated successfully"
+}
+
 # Function to reset route table to base configuration
 reset_route_table() {
     local route_table_id="$1"
@@ -78,6 +133,8 @@ reset_route_table() {
     local service_gateway_id="$3"
     
     log "Resetting route table to base configuration..."
+    log "Using NAT Gateway: $nat_gateway_id"
+    log "Using Service Gateway: $service_gateway_id"
     
     # Create base route rules JSON
     local base_rules=$(cat << EOF
@@ -95,6 +152,9 @@ reset_route_table() {
 ]
 EOF
     )
+    
+    log "Generated route rules JSON:"
+    echo "$base_rules" | jq '.' || echo "$base_rules"
     
     log "Updating route table with base rules..."
     if oci network route-table update \
@@ -295,6 +355,9 @@ main() {
     
     # Check dependencies
     check_dependencies
+    
+    # Validate parameters
+    validate_parameters "$route_table_id" "$subnet_id" "$nat_gateway_id" "$service_gateway_id"
     
     log "🚀 Starting OCI route management"
     log "Action: $action"
