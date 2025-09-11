@@ -33,7 +33,6 @@ Example:
   $0 reset staging ocid1.routetable.oc1... ocid1.subnet.oc1... ocid1.natgateway.oc1... ocid1.servicegateway.oc1...
 
 Environment Variables (optional):
-  CONTROLLER_IP    - Controller IP address (for configure action)
   TAILSCALE_PREFIX - Tailscale hostname prefix (default: determined by environment)
 EOF
 }
@@ -206,8 +205,7 @@ get_private_ips() {
 
 # Function to get pod CIDR assignments from k0s cluster
 get_pod_cidrs() {
-    local controller_ip="$1"
-    local environment="$2"
+    local environment="$1"
     
     # Use Tailscale hostname instead of IP address for connection
     local controller_hostname="k0s-controller-$environment"
@@ -262,13 +260,28 @@ get_pod_cidrs() {
     fi
     
     # Try to get node information via SSH using Tailscale hostname
+    log "Getting node information from k0s cluster..."
     local node_info
-    if ! node_info=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "opc@$controller_hostname" \
-        "/usr/local/bin/k0s kubectl get nodes -o json" 2>/dev/null); then
-        error "Failed to get node information from k0s controller"
-        error "Make sure k0s controller is fully ready and cluster is operational"
+    node_info=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "opc@$controller_hostname" \
+        "/usr/local/bin/k0s kubectl get nodes -o json" 2>&1)
+    local kubectl_exit_code=$?
+    
+    if [ $kubectl_exit_code -ne 0 ]; then
+        error "kubectl command failed with exit code: $kubectl_exit_code"
+        error "kubectl output: $node_info"
         return 1
     fi
+    
+    # Validate that we got valid JSON
+    log "Validating JSON output from kubectl..."
+    if ! echo "$node_info" | jq . >/dev/null 2>&1; then
+        error "kubectl returned invalid JSON"
+        error "Raw output (first 500 chars): ${node_info:0:500}"
+        error "Raw output length: ${#node_info} characters"
+        return 1
+    fi
+    
+    log "✅ Got valid JSON node information from kubectl"
     
     # Extract pod CIDR information from node annotations
     local pod_cidrs
@@ -421,25 +434,11 @@ main() {
             reset_route_table "$route_table_id" "$nat_gateway_id" "$service_gateway_id"
             ;;
         configure)
-            # Get controller IP from environment variable or discover it
-            local controller_ip="$CONTROLLER_IP"
-            if [ -z "$controller_ip" ]; then
-                log "CONTROLLER_IP not provided, discovering controller..."
-                local private_ips
-                private_ips=$(get_private_ips "$subnet_id" "$environment")
-                controller_ip=$(echo "$private_ips" | jq -r 'select(.role == "controller") | .ip_address' | head -1)
-                
-                if [ -z "$controller_ip" ] || [ "$controller_ip" = "null" ]; then
-                    error "Could not find controller IP address"
-                    exit 1
-                fi
-                log "Discovered controller IP: $controller_ip"
-            fi
-            
             # Get private IPs and pod CIDR assignments
+            # Controller connection uses Tailscale hostname, no IP discovery needed
             local private_ips pod_cidrs matched_nodes
             private_ips=$(get_private_ips "$subnet_id" "$environment")
-            pod_cidrs=$(get_pod_cidrs "$controller_ip" "$environment")
+            pod_cidrs=$(get_pod_cidrs "$environment")
             matched_nodes=$(match_nodes "$private_ips" "$pod_cidrs")
             
             # Configure the route table

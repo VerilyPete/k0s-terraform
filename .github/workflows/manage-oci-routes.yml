@@ -30,10 +30,6 @@ on:
         required: true
         type: string
         default: 'configure'
-      controller_ip:
-        description: 'Controller IP address (required for configure action)'
-        required: false
-        type: string
     secrets:
       OCI_CLI_USER:
         required: true
@@ -114,11 +110,9 @@ jobs:
           # Set environment and action from inputs
           ENV="${{ inputs.environment || github.event.inputs.environment }}"
           ACTION="${{ inputs.action || github.event.inputs.action }}"
-          CONTROLLER_IP="${{ inputs.controller_ip }}"
           
           echo "environment=$ENV" >> $GITHUB_OUTPUT
           echo "action=$ACTION" >> $GITHUB_OUTPUT
-          echo "controller_ip=$CONTROLLER_IP" >> $GITHUB_OUTPUT
           
           # Set route table ID based on environment
           if [ "$ENV" = "staging" ]; then
@@ -133,15 +127,12 @@ jobs:
           echo "🎯 Route Management Parameters:"
           echo "  Environment: $ENV"
           echo "  Action: $ACTION"
-          echo "  Controller IP: ${CONTROLLER_IP:-'(auto-discover)'}"
+          echo "  Controller: k0s-controller-$ENV (via Tailscale)"
 
       - name: Validate configuration action requirements
         if: steps.params.outputs.action == 'configure'
         run: |
-          if [ "${{ steps.params.outputs.action }}" = "configure" ] && [ -z "${{ steps.params.outputs.controller_ip }}" ]; then
-            echo "⚠️  Configure action requested but no controller IP provided"
-            echo "✅ Will auto-discover controller IP from OCI subnet"
-          fi
+          echo "✅ Configure action will connect to controller via Tailscale hostname"
 
       - name: Setup connectivity for controller access
         if: steps.params.outputs.action == 'configure'
@@ -152,8 +143,6 @@ jobs:
 
       - name: Execute route management
         id: route_management
-        env:
-          CONTROLLER_IP: ${{ steps.params.outputs.controller_ip }}
         run: |
           echo "🚀 Executing route management for ${{ steps.params.outputs.environment }}"
           echo "📋 Action: ${{ steps.params.outputs.action }}"

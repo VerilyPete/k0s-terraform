@@ -546,5 +546,4 @@ jobs:
     with:
       environment: ${{ inputs.environment }}
       action: 'configure'
-      controller_ip: ${{ inputs.controller_ip }}
     secrets: inherit
