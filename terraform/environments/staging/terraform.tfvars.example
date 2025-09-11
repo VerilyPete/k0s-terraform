@@ -12,7 +12,6 @@ compartment_id      = "ocid1.compartment.oc1..aaaaaaaa..."
 availability_domain = "AD-1"
 subnet_id          = "ocid1.subnet.oc1.iad.aaaaaaaa..."
 vcn_id             = "ocid1.vcn.oc1.iad.aaaaaaaa..."
-route_table_id     = "ocid1.routetable.oc1.iad.aaaaaaaa..."  # Route table for your private subnet
 image_id           = "ocid1.image.oc1.iad.aaaaaaaa..."
 
 # Access Configuration
