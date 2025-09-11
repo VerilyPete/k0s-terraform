@@ -74,11 +74,13 @@ jobs:
 
       - name: Setup OCI CLI
         run: |
-          # Install OCI CLI
-          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh > install.sh
-          chmod +x install.sh
-          ./install.sh --accept-all-defaults
-          rm install.sh
+          # Install OCI CLI using pip for more reliable installation
+          python3 -m pip install --upgrade pip
+          python3 -m pip install oci-cli
+          
+          # Verify installation
+          oci --version
+          which oci
           
           # Configure OCI CLI using absolute paths
           mkdir -p /home/runner/.oci
