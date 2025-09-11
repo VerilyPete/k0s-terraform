@@ -213,12 +213,40 @@ get_pod_cidrs() {
     local controller_hostname="k0s-controller-$environment"
     log "Connecting to k0s controller at $controller_hostname (Tailscale) to get pod CIDR assignments..."
     
+    # Test basic connectivity first
+    log "Testing connectivity to $controller_hostname..."
+    if ! ping -c 1 -W 5 "$controller_hostname" >/dev/null 2>&1; then
+        error "Cannot ping $controller_hostname - Tailscale connectivity issue"
+        return 1
+    fi
+    log "✅ Ping to $controller_hostname successful"
+    
+    # Test SSH connectivity
+    log "Testing SSH connectivity to $controller_hostname..."
+    if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes "opc@$controller_hostname" "echo 'SSH test successful'" >/dev/null 2>&1; then
+        error "SSH connection to $controller_hostname failed"
+        error "Debugging SSH connection..."
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -v "opc@$controller_hostname" "echo 'SSH test'" 2>&1 | head -10 || true
+        return 1
+    fi
+    log "✅ SSH connectivity to $controller_hostname successful"
+    
+    # Test k0s availability
+    log "Testing k0s kubectl availability on $controller_hostname..."
+    if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "opc@$controller_hostname" "k0s kubectl version" >/dev/null 2>&1; then
+        error "k0s kubectl not available or not working on $controller_hostname"
+        log "Checking k0s status..."
+        ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" "sudo systemctl status k0scontroller --no-pager -l" 2>&1 | head -20 || true
+        return 1
+    fi
+    log "✅ k0s kubectl is available on $controller_hostname"
+    
     # Try to get node information via SSH using Tailscale hostname
     local node_info
     if ! node_info=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "opc@$controller_hostname" \
         "k0s kubectl get nodes -o json" 2>/dev/null); then
-        error "Failed to connect to k0s controller or get node information"
-        error "Make sure Tailscale connectivity is established and controller hostname is accessible: $controller_hostname"
+        error "Failed to get node information from k0s controller"
+        error "Make sure k0s controller is fully ready and cluster is operational"
         return 1
     fi
     
