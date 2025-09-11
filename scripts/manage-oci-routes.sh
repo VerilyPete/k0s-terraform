@@ -236,7 +236,7 @@ get_pod_cidrs() {
     local k0s_ready=false
     for attempt in {1..12}; do
         log "Attempt $attempt/12: Testing k0s kubectl..."
-        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "opc@$controller_hostname" "k0s kubectl version" >/dev/null 2>&1; then
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "opc@$controller_hostname" "/usr/local/bin/k0s kubectl version" >/dev/null 2>&1; then
             k0s_ready=true
             log "✅ k0s kubectl is available on $controller_hostname"
             break
@@ -264,7 +264,7 @@ get_pod_cidrs() {
     # Try to get node information via SSH using Tailscale hostname
     local node_info
     if ! node_info=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "opc@$controller_hostname" \
-        "k0s kubectl get nodes -o json" 2>/dev/null); then
+        "/usr/local/bin/k0s kubectl get nodes -o json" 2>/dev/null); then
         error "Failed to get node information from k0s controller"
         error "Make sure k0s controller is fully ready and cluster is operational"
         return 1
