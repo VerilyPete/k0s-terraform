@@ -1,51 +1,37 @@
-name: 'K0s Cluster Deploy'
+name: 'k0s Cluster Setup and App Deployment'
 
 on:
   workflow_call:
     inputs:
       environment:
-        description: 'Environment to deploy'
         required: true
         type: string
       controller_ip:
-        description: 'Controller IP address'
         required: true
         type: string
       controller_hostname:
-        description: 'Controller hostname'
         required: true
         type: string
-    secrets:
-      OCI_CLI_USER:
-        required: true
-      OCI_CLI_TENANCY:
-        required: true
-      OCI_CLI_FINGERPRINT:
-        required: true
-      OCI_CLI_KEY_CONTENT:
-        required: true
-      OCI_CLI_REGION:
-        required: true
-      OCI_COMPARTMENT_ID:
-        required: true
-      OCI_PRIVATE_SUBNET:
-        required: true
-      OCI_ROUTE_TABLE_STAGING:
-        required: true
-      OCI_ROUTE_TABLE_PRODUCTION:
-        required: true
-      OCI_NAT_GATEWAY:
-        required: true
-      OCI_SERVICE_GATEWAY:
-        required: true
-      SSH_PRIVATE_KEY:
-        required: true
-      TAILSCALE_API_KEY:
-        required: false
+    outputs:
+      deployment_status:
+        description: "Deployment completion status"
+        value: ${{ jobs.k0s-deployment.outputs.status }}
 
-permissions:
-  contents: read
-  id-token: write
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_cluster_setup:
+        description: 'Skip cluster setup (deploy apps only)'
+        required: false
+        default: false
+        type: boolean
 
 env:
   OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
@@ -57,179 +43,485 @@ env:
 jobs:
   k0s-deployment:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    
+    timeout-minutes: 30
+    outputs:
+      status: ${{ steps.deployment_status.outputs.status }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH
-        run: |
-          # Setup SSH key for accessing nodes
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          
-          # Add known hosts
-          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-          
-          # Disable strict host key checking for OCI instances
-          cat >> ~/.ssh/config << EOF
-          Host 10.0.1.*
-              StrictHostKeyChecking no
-              UserKnownHostsFile /dev/null
-              LogLevel QUIET
-          EOF
+      - name: Setup connectivity
+        uses: ./.github/actions/setup-connectivity
+        with:
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          tailscale_auth_key: ${{ secrets.TAILSCALE_AUTH_KEY }}
 
-      - name: Wait for k0s controller to be ready
+      - name: Wait for all nodes to be accessible
         run: |
-          echo "🔄 Waiting for k0s controller to be ready at ${{ inputs.controller_ip }}"
-          
-          # Wait for SSH connectivity
-          for i in {1..30}; do
-            if ssh -o ConnectTimeout=10 opc@${{ inputs.controller_ip }} "echo 'SSH connection successful'" 2>/dev/null; then
-              echo "✅ SSH connection established"
+          echo "⏳ Waiting for all nodes to be accessible via Tailscale..."
+          echo "  - Checking every 20 seconds for node availability"
+          echo "  - Will proceed as soon as all nodes are reachable"
+          echo ""
+
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          NODES=("k0s-controller-$ENVIRONMENT" "k0s-worker-1-$ENVIRONMENT" "k0s-worker-2-$ENVIRONMENT")
+          READY_NODES=()
+          MAX_WAIT_TIME=900  # 15 minutes maximum
+          CHECK_INTERVAL=20  # Check every 20 seconds
+          ELAPSED_TIME=0
+
+          echo "🔍 Monitoring nodes: ${NODES[*]}"
+          echo ""
+
+          while [ ${#READY_NODES[@]} -lt ${#NODES[@]} ] && [ $ELAPSED_TIME -lt $MAX_WAIT_TIME ]; do
+            echo "⏰ Check at $ELAPSED_TIME seconds (${#READY_NODES[@]}/${#NODES[@]} nodes ready)..."
+            
+            # Show current Tailscale status every 5 checks (100 seconds)
+            if [ $((ELAPSED_TIME % 100)) -eq 0 ]; then
+              echo "Current Tailscale status:"
+              sudo tailscale status | head -10
+              echo ""
+            fi
+
+            for node in "${NODES[@]}"; do
+              # Skip if node is already ready
+              if [[ " ${READY_NODES[*]} " =~ " $node " ]]; then
+                continue
+              fi
+
+              echo "  🔍 Checking $node..."
+              
+              # Check if node appears in Tailscale first
+              if ! sudo tailscale status | grep -q "$node"; then
+                echo "    ⏱️  $node not in Tailscale network yet"
+                continue
+              fi
+              
+              # Test ping connectivity
+              if ! timeout 5 ping -c 1 -W 2 "$node" >/dev/null 2>&1; then
+                echo "    ⏱️  $node not pingable yet"
+                continue
+              fi
+              
+              # Test SSH connectivity
+              if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes "opc@$node" "echo 'Node ready'" >/dev/null 2>&1; then                                                                  
+                echo "    ✅ $node is accessible!"
+                READY_NODES+=("$node")
+              else
+                echo "    ⏱️  $node SSH not ready yet"
+              fi
+            done
+
+            # Break if all nodes are ready
+            if [ ${#READY_NODES[@]} -eq ${#NODES[@]} ]; then
               break
             fi
-            echo "Attempt $i/30: Waiting for SSH connectivity..."
-            sleep 10
-          done
-          
-          # Wait for k0s to be ready
-          echo "🔄 Waiting for k0s to be ready..."
-          for i in {1..60}; do
-            if ssh opc@${{ inputs.controller_ip }} "k0s kubectl get nodes" 2>/dev/null; then
-              echo "✅ K0s controller is ready"
-              break
-            fi
-            echo "Attempt $i/60: Waiting for k0s..."
-            sleep 10
+
+            echo "  💤 Waiting $CHECK_INTERVAL seconds before next check..."
+            sleep $CHECK_INTERVAL
+            ELAPSED_TIME=$((ELAPSED_TIME + CHECK_INTERVAL))
           done
 
-      - name: Get worker join token
-        id: join_token
-        run: |
-          echo "📝 Getting worker join token from controller..."
-          
-          # Get the worker token from the controller
-          TOKEN=$(ssh opc@${{ inputs.controller_ip }} "sudo cat /tmp/worker-token.txt" 2>/dev/null || true)
-          
-          if [ -z "$TOKEN" ]; then
-            echo "⚠️  No existing token found, generating new one..."
-            TOKEN=$(ssh opc@${{ inputs.controller_ip }} "k0s token create --role=worker --expiry=48h" 2>/dev/null)
-          fi
-          
-          if [ -z "$TOKEN" ]; then
-            echo "❌ Failed to get worker join token"
+          echo ""
+          if [ ${#READY_NODES[@]} -eq ${#NODES[@]} ]; then
+            echo "🎉 All nodes are accessible! (took $ELAPSED_TIME seconds)"
+            echo "✅ Ready nodes: ${READY_NODES[*]}"
+          else
+            echo "❌ Timeout: Only ${#READY_NODES[@]}/${#NODES[@]} nodes became accessible after $ELAPSED_TIME seconds"                                                                                                 
+            echo "✅ Ready nodes: ${READY_NODES[*]}"
+            echo "⏱️  Still waiting for: "
+            for node in "${NODES[@]}"; do
+              if [[ ! " ${READY_NODES[*]} " =~ " $node " ]]; then
+                echo "    - $node"
+              fi
+            done
             exit 1
           fi
-          
-          # Save token securely (don't echo it)
-          echo "worker_token=$TOKEN" >> $GITHUB_OUTPUT
-          echo "✅ Worker join token obtained (${#TOKEN} characters)"
 
-      - name: Join worker nodes to cluster
+      - name: Setup K8s cluster
+        if: github.event.inputs.skip_cluster_setup != 'true'
         run: |
-          echo "🔗 Joining worker nodes to k0s cluster..."
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
           
-          # Get list of worker nodes from Tailscale or OCI
-          # For now, assuming workers are discoverable via hostname pattern
+          echo "Setting up k0s cluster on $CONTROLLER..."
           
-          # This is a simplified example - in practice, you'd want to:
-          # 1. Query OCI for worker instances in the environment
-          # 2. Or use Tailscale API to find worker nodes
-          # 3. SSH to each worker and join them to the cluster
-          
-          echo "ℹ️  Worker joining logic would be implemented here"
-          echo "    - Discover worker nodes for environment: ${{ inputs.environment }}"
-          echo "    - SSH to each worker"
-          echo "    - Run: k0s install worker --token-file /tmp/token.txt"
-          echo "    - Start k0s worker service"
-          
-          # Placeholder for actual worker joining logic
-          ssh opc@${{ inputs.controller_ip }} "k0s kubectl get nodes" || true
-
-      - name: Wait for all nodes to be ready
-        run: |
-          echo "⏳ Waiting for all nodes to join and become ready..."
-          
-          # Wait for all nodes to be in Ready state
-          for i in {1..30}; do
-            READY_NODES=$(ssh opc@${{ inputs.controller_ip }} "k0s kubectl get nodes --no-headers | grep -c Ready" 2>/dev/null || echo "0")
-            TOTAL_NODES=$(ssh opc@${{ inputs.controller_ip }} "k0s kubectl get nodes --no-headers | wc -l" 2>/dev/null || echo "0")
-            
-            echo "Attempt $i/30: $READY_NODES/$TOTAL_NODES nodes ready"
-            
-            if [ "$READY_NODES" -gt "0" ] && [ "$READY_NODES" = "$TOTAL_NODES" ]; then
-              echo "✅ All nodes are ready"
+          # Wait for controller to be fully ready
+          echo "Waiting for k0s controller to be ready..."
+          for i in {1..24}; do
+            if ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes" >/dev/null 2>&1; then                                                                                        
+              echo "✅ Controller is ready"
               break
             fi
+            
+            if [ $i -eq 24 ]; then
+              echo "❌ Controller failed to be ready after 4 minutes"
+              ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo systemctl status k0scontroller --no-pager -l" || true                                                                                               
+              exit 1
+            fi
+            
+            echo "  Attempt $i/24 - waiting 10s..."
             sleep 10
           done
           
-          # Display final node status
-          echo "📊 Final node status:"
-          ssh opc@${{ inputs.controller_ip }} "k0s kubectl get nodes -o wide" || true
+          # Add kubectl alias for easier cluster management
+          echo "Setting up kubectl alias..."
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "echo \"alias kubectl='sudo /usr/local/bin/k0s kubectl'\" >> ~/.bashrc"                                                                                       
+          echo "✅ kubectl alias added to bashrc"
 
-      - name: Wait for pod CIDR assignments
-        run: |
-          echo "🔄 Waiting for kube-router to assign pod CIDRs to nodes..."
+          # Get join token - FIXED VERSION
+          echo "Retrieving worker join token..."
+          echo "Checking SSH connectivity to $CONTROLLER..."
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 opc@$CONTROLLER "echo 'SSH connection successful'" || {                                                                                                  
+            echo "❌ SSH connection failed"
+            exit 1
+          }
+
+          echo "Checking token file status..."
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "ls -la /tmp/worker-token.txt" || {
+            echo "❌ Token file not found, checking setup logs..."
+            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo tail -20 /var/log/k0s-controller-setup.log" || echo "No setup log found"                                                                              
+            exit 1
+          }
+
+          echo "Reading token file..."
+          JOIN_TOKEN=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "cat /tmp/worker-token.txt")
+          COMMAND_EXIT_CODE=$?
           
-          # Wait for pod CIDR annotations to be present on all nodes
-          for i in {1..30}; do
-            NODES_WITH_CIDRS=$(ssh opc@${{ inputs.controller_ip }} \
-              "k0s kubectl get nodes -o json | jq '.items[] | select(.metadata.annotations[\"kube-router.io/pod-cidr\"]) | .metadata.name' | wc -l" 2>/dev/null || echo "0")
-            TOTAL_NODES=$(ssh opc@${{ inputs.controller_ip }} "k0s kubectl get nodes --no-headers | wc -l" 2>/dev/null || echo "0")
+          JOIN_TOKEN=$(echo "$JOIN_TOKEN" | tr -d '\n\r')
+
+          echo "Token read command exit code: $COMMAND_EXIT_CODE"
+          echo "Token length: ${#JOIN_TOKEN}"
+          echo "Token preview (first 50 chars): ${JOIN_TOKEN:0:50}..."
+
+          if [ -z "$JOIN_TOKEN" ]; then
+            echo "❌ Token is empty"
+            echo "Checking if file exists and has content..."
+            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "wc -l /tmp/worker-token.txt; head -1 /tmp/worker-token.txt"                                                                                                
+            exit 1
+          fi
+
+          # Join workers in parallel
+          join_worker() {
+            local worker=$1
+            echo "Joining $worker to cluster..."
+  
+            if ssh -o StrictHostKeyChecking=no opc@$worker "
+              echo '=== Debug: Starting worker join process ==='
+              echo 'Worker: $worker'
+              echo 'Token length: ${#JOIN_TOKEN}'
+          
+              # Create token file with proper permissions
+              echo 'Creating token file...'
+              echo '$JOIN_TOKEN' | sudo tee /tmp/join-token.txt > /dev/null
+              
+              # Verify token file was created correctly
+              echo '=== Debug: Token file verification ==='
+              if [ -f /tmp/join-token.txt ]; then
+                echo '✅ Token file exists'
+                echo 'Token file size:' \$(stat -c%s /tmp/join-token.txt)
+                echo 'Token file permissions:' \$(ls -la /tmp/join-token.txt)
+                echo 'Token file content preview (first 50 chars):' \$(head -c 50 /tmp/join-token.txt)
+              else
+                echo '❌ Token file does not exist!'
+                exit 1
+              fi
+        
+              # Set proper permissions
+              sudo chmod 600 /tmp/join-token.txt
+        
+              # Check token format (basic validation)
+              echo '=== Debug: Basic token format check ==='
+              token_lines=\$(wc -l < /tmp/join-token.txt)
+              echo \"Token has \$token_lines lines\"
+    
+              # k0s tokens are typically base64 encoded and should be non-empty
+              if [ -s /tmp/join-token.txt ]; then
+                echo '✅ Token file is not empty'
+                # Check if it looks like a valid token (basic check)
+                first_char=\$(head -c 1 /tmp/join-token.txt)
+                if [ -n \"\$first_char\" ] && [ \"\$first_char\" != \" \" ]; then
+                  echo '✅ Token appears to have valid format'
+                else
+                  echo '❌ Token appears to start with whitespace or be invalid'
+                  echo 'Token hex dump (first 100 bytes):'
+                  sudo hexdump -C /tmp/join-token.txt | head -5
+                fi
+              else
+                echo '❌ Token file is empty'
+                exit 1
+              fi
+        
+              # Install worker service
+              echo '=== Debug: Installing k0s worker service ==='
+              sudo /usr/local/bin/k0s install worker --token-file /tmp/join-token.txt
+              install_exit_code=\$?
+              
+              echo 'Install command exit code:' \$install_exit_code
+              if [ \$install_exit_code -ne 0 ]; then
+                echo '❌ Install command failed'
+                exit 1
+              fi
+       
+              # Check if service file was created
+              echo '=== Debug: Service file verification ==='
+              if [ -f /etc/systemd/system/k0sworker.service ]; then
+                echo '✅ Service file created'
+                echo 'Service file content:'
+                sudo cat /etc/systemd/system/k0sworker.service
+              else
+                echo '❌ Service file not created'
+                exit 1
+              fi
+        
+              # Reload systemd and enable service
+              echo '=== Debug: Configuring systemd service ==='
+              sudo systemctl daemon-reload
+              reload_exit_code=\$?
+              echo 'Daemon reload exit code:' \$reload_exit_code
+        
+              sudo systemctl enable k0sworker
+              enable_exit_code=\$?
+              echo 'Enable service exit code:' \$enable_exit_code
+        
+              # Check service status before starting
+              echo '=== Debug: Pre-start service status ==='
+              sudo systemctl status k0sworker --no-pager || echo 'Service not yet started (expected)'
+        
+              # Start the service
+              echo '=== Debug: Starting k0s worker service ==='
+              sudo systemctl start k0sworker
+              start_exit_code=\$?
+              echo 'Start service exit code:' \$start_exit_code
+
+              # Wait a moment for service to initialize
+              sleep 5
+              
+              # Check service status after start attempt
+              echo '=== Debug: Post-start service status ==='
+              sudo systemctl status k0sworker --no-pager -l
+        
+              # Check logs for any errors
+              echo '=== Debug: Service logs (last 20 lines) ==='
+              sudo journalctl -u k0sworker --no-pager -l -n 20
+        
+              # Wait for service to be active with detailed status checks
+              echo '=== Debug: Waiting for service to become active ==='
+              for i in {1..12}; do
+                service_status=\$(systemctl is-active k0sworker)
+                echo \"Attempt \$i/12 - Service status: \$service_status\"
+          
+                if [ \"\$service_status\" = \"active\" ]; then
+                  echo '✅ $worker joined successfully'
             
-            echo "Attempt $i/30: $NODES_WITH_CIDRS/$TOTAL_NODES nodes have pod CIDR assignments"
-            
-            if [ "$NODES_WITH_CIDRS" -gt "0" ] && [ "$NODES_WITH_CIDRS" = "$TOTAL_NODES" ]; then
-              echo "✅ All nodes have pod CIDR assignments"
-              break
+                  # Final verification
+                  echo '=== Debug: Final verification ==='
+                  sudo systemctl status k0sworker --no-pager
+                  break
+                elif [ \"\$service_status\" = \"failed\" ]; then
+                  echo '❌ Service failed to start'
+                  echo 'Recent logs:'
+                  sudo journalctl -u k0sworker --no-pager -l -n 10
+                  exit 1
+                fi
+          
+                sleep 5
+              done
+        
+              # Check if we timed out
+              final_status=\$(systemctl is-active k0sworker)
+              if [ \"\$final_status\" != \"active\" ]; then
+                echo '❌ Service failed to become active within timeout'
+                echo 'Final status:' \$final_status
+                sudo journalctl -u k0sworker --no-pager -l -n 20
+                exit 1
+              fi
+        
+              # Note: NOT removing the token file immediately since the service might need it
+              # sudo rm -f /tmp/join-token.txt
+              echo '=== Debug: Keeping token file for service use ==='
+            "; then
+              echo "✅ $worker setup complete"
+            else
+              echo "❌ $worker setup failed"
+              return 1
             fi
-            sleep 10
-          done
-          
-          # Display pod CIDR assignments
-          echo "📊 Pod CIDR assignments:"
-          ssh opc@${{ inputs.controller_ip }} \
-            "k0s kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}: {.metadata.annotations.kube-router\.io/pod-cidr}{\"\\n\"}{end}'" || true
+          }
 
-      - name: Mark routes configuration needed
-        id: routes_needed
-        run: |
-          echo "Routes configuration will be handled by separate job"
-          echo "configure_routes=true" >> $GITHUB_OUTPUT
+          # Join workers in background
+          join_worker "k0s-worker-1-$ENVIRONMENT" &
+          PID1=$!
+          join_worker "k0s-worker-2-$ENVIRONMENT" &
+          PID2=$!
 
-      - name: Verify cluster connectivity
-        run: |
-          echo "🔍 Verifying cluster connectivity and pod networking..."
-          
-          # Check cluster status
-          echo "📊 Cluster status:"
-          ssh opc@${{ inputs.controller_ip }} "k0s status" || true
-          
-          # Check pod networking
-          echo "📊 Pod networking status:"
-          ssh opc@${{ inputs.controller_ip }} "k0s kubectl get nodes -o wide" || true
-          
-          # Check if we can create a test pod
-          echo "🧪 Testing pod creation..."
-          ssh opc@${{ inputs.controller_ip }} "k0s kubectl run test-pod --image=busybox --rm -it --restart=Never -- echo 'Pod networking test successful'" || true
+          # Wait for both workers
+          wait $PID1 && wait $PID2
 
-      - name: K0s Deployment Summary
+          echo "✅ Cluster setup complete"
+
+      - name: Verify cluster
         run: |
-          echo "============================================="
-          echo "🎉 K0s Cluster Deployment Complete - ${{ inputs.environment }}"
-          echo "============================================="
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
+          
+          echo "Verifying cluster state..."
+          
+          # Check immediately if nodes are already available
+          echo "🔍 Checking if worker nodes are already ready..."
+          NODE_COUNT=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes --no-headers 2>/dev/null | wc -l" || echo "0")                                                        
+          
+          if [ "$NODE_COUNT" -ge 2 ]; then
+            echo "✅ All worker nodes already ready!"
+            ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes -o wide"                                                                                                         
+          else
+            echo "⏳ Only $NODE_COUNT/2 nodes ready, waiting for worker nodes to join..."
+            # Wait for nodes to appear in cluster
+            sleep 60
+            
+            for i in {1..10}; do
+              NODE_COUNT=$(ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes --no-headers 2>/dev/null | wc -l" || echo "0")                                                    
+              
+              if [ "$NODE_COUNT" -ge 2 ]; then
+                echo "✅ All worker nodes found in cluster"
+                ssh -o StrictHostKeyChecking=no opc@$CONTROLLER "sudo /usr/local/bin/k0s kubectl get nodes -o wide"                                                                                                     
+                break
+              else
+                if [ $i -eq 10 ]; then
+                  echo "❌ Timeout waiting for worker nodes"
+                  exit 1
+                fi
+                echo "⏳ Only $NODE_COUNT/2 nodes ready, waiting 15s..."
+                sleep 15
+              fi
+            done
+          fi
+
+      - name: Configure cluster
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
+          
+          echo "Configuring cluster nodes and storage..."
+          
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << EOF
+            # Wait for nodes to be ready
+            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k0s-worker-1-$ENVIRONMENT --timeout=120s                                                                                                    
+            sudo /usr/local/bin/k0s kubectl wait --for=condition=Ready node/k0s-worker-2-$ENVIRONMENT --timeout=120s                                                                                                    
+
+            # Label nodes
+            sudo /usr/local/bin/k0s kubectl label node k0s-worker-1-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite                                                                                        
+            sudo /usr/local/bin/k0s kubectl label node k0s-worker-2-$ENVIRONMENT node-role.kubernetes.io/worker=true --overwrite                                                                                        
+            sudo /usr/local/bin/k0s kubectl label node k0s-worker-1-$ENVIRONMENT storage=local --overwrite
+
+            echo "✅ Cluster configuration complete"
+          EOF
+
+      - name: Deploy applications via Helm
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
+          
+          echo "Deploying applications via Helm..."
+          
+          # Copy Helm charts to controller
+          scp -r -o StrictHostKeyChecking=no ./helm-charts opc@$CONTROLLER:/tmp/
+
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << EOF
+            cd /tmp/helm-charts
+
+            # Install Helm if not present
+            if ! command -v helm &> /dev/null; then
+              echo "Installing Helm..."
+              curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+              chmod 700 get_helm.sh
+              ./get_helm.sh
+              rm get_helm.sh
+            fi
+
+            # Add Helm repositories
+            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+            helm repo add strrl https://helm.strrl.dev/
+            helm repo update
+
+            # Deploy Cloudflare tunnel controller
+            echo "Deploying Cloudflare tunnel controller..."
+            helm upgrade --install --wait \\
+              -n cloudflare-tunnel --create-namespace \\
+              cloudflare-tunnel-ingress-controller \\
+              strrl/cloudflare-tunnel-ingress-controller \\
+              --set=cloudflare.apiToken="${{ secrets.CLOUDFLARE_K0S_TOKEN }}" \\
+              --set=cloudflare.accountId="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \\
+              --set=cloudflare.tunnelName="webserver-$ENVIRONMENT" \\
+              --set=nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\
+              --timeout=300s
+
+            # Deploy webserver application
+            echo "Deploying webserver application..."
+            helm upgrade --install webserver ./webserver \\
+              --namespace webserver --create-namespace \\
+              --values ./webserver/values-$ENVIRONMENT.yaml \\
+              --wait --timeout=300s
+
+            # Deploy monitoring stack
+            echo "Deploying monitoring stack..."
+            helm upgrade --install --wait \\
+              -n monitoring --create-namespace \\
+              monitoring prometheus-community/kube-prometheus-stack \\
+              --set prometheus.prometheusSpec.nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\                                                                                                    
+              --set grafana.nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\
+              --set alertmanager.alertmanagerSpec.nodeSelector."kubernetes\\.io/hostname"="k0s-worker-1-$ENVIRONMENT" \\                                                                                                
+              --timeout=600s
+
+            echo "✅ All applications deployed successfully"
+          EOF
+
+      - name: Verify deployment
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          CONTROLLER="k0s-controller-$ENVIRONMENT"
+          
+          echo "Verifying deployment..."
+          
+          ssh -o StrictHostKeyChecking=no opc@$CONTROLLER << 'EOF'
+            echo "📊 Cluster Status:"
+            sudo /usr/local/bin/k0s kubectl get nodes -o wide
+
+            echo -e "\n📦 All Pods:"
+            sudo /usr/local/bin/k0s kubectl get pods -A -o wide
+
+            echo -e "\n🌐 Services:"
+            sudo /usr/local/bin/k0s kubectl get svc -A
+
+            echo -e "\n🚪 Ingress:"
+            sudo /usr/local/bin/k0s kubectl get ingress -A
+          EOF
+
+      - name: Mark deployment complete
+        id: deployment_status
+        run: |
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ k0s cluster deployment completed successfully"
+
+      - name: Display summary
+        run: |
+          ENVIRONMENT="${{ inputs.environment || github.event.inputs.environment }}"
+          
+          echo "========================================="
+          echo "🎉 K0s Deployment Complete - $ENVIRONMENT"
+          echo "========================================="
           echo ""
-          echo "Controller: ${{ inputs.controller_hostname }}"
-          echo "Private IP: ${{ inputs.controller_ip }}"
-          echo "Environment: ${{ inputs.environment }}"
+          echo "🖥️  Cluster Access:"
+          echo "  SSH: ssh opc@k0s-controller-$ENVIRONMENT"
+          echo "  Kubectl: sudo /usr/local/bin/k0s kubectl get pods -A"
           echo ""
-          echo "✅ Cluster is ready for workload deployment"
-          echo "🔄 Pod networking routes configuration will follow"
-          echo "============================================="
+          echo "🌐 Application:"
+          echo "  Domain: mclaurinquist.com"
+          echo "  Environment: $ENVIRONMENT"
+          echo ""
+          echo "📊 Monitoring:"
+          echo "  Access via NodePort services on worker nodes"
+          echo "========================================="
 
   # Configure OCI routes for pod networking
   configure-routes:
