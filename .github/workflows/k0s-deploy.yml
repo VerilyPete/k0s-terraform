@@ -195,13 +195,11 @@ jobs:
           ssh opc@${{ inputs.controller_ip }} \
             "k0s kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}: {.metadata.annotations.kube-router\.io/pod-cidr}{\"\\n\"}{end}'" || true
 
-      - name: Configure cluster routes
-        uses: ./.github/workflows/manage-oci-routes.yml
-        with:
-          environment: ${{ inputs.environment }}
-          action: 'configure'
-          controller_ip: ${{ inputs.controller_ip }}
-          secrets: inherit
+      - name: Mark routes configuration needed
+        id: routes_needed
+        run: |
+          echo "Routes configuration will be handled by separate job"
+          echo "configure_routes=true" >> $GITHUB_OUTPUT
 
       - name: Verify cluster connectivity
         run: |
@@ -230,5 +228,15 @@ jobs:
           echo "Environment: ${{ inputs.environment }}"
           echo ""
           echo "✅ Cluster is ready for workload deployment"
-          echo "✅ Pod networking routes have been configured"
+          echo "🔄 Pod networking routes configuration will follow"
           echo "============================================="
+
+  # Configure OCI routes for pod networking
+  configure-routes:
+    needs: k0s-deployment
+    uses: ./.github/workflows/manage-oci-routes.yml
+    with:
+      environment: ${{ inputs.environment }}
+      action: 'configure'
+      controller_ip: ${{ inputs.controller_ip }}
+    secrets: inherit
