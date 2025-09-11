@@ -5,7 +5,7 @@ set -euo pipefail
 # This script helps ensure consistent pod CIDR assignments to worker nodes
 #
 # Usage:
-#   ./configure-pod-cidrs.sh <controller_ip> <environment>
+#   ./configure-pod-cidrs.sh <environment>
 #
 # This script provides two approaches for consistent CIDR assignment:
 # 1. Annotation-based assignment (recommended)
@@ -14,12 +14,11 @@ set -euo pipefail
 # Function to display usage
 usage() {
     cat << EOF
-Usage: $0 <controller_ip> <environment>
+Usage: $0 <environment>
 
 This script helps ensure consistent pod CIDR assignments for k0s worker nodes.
 
 Arguments:
-  controller_ip    - IP address of the k0s controller
   environment      - Environment name (staging/production)
 
 Approaches:
@@ -27,9 +26,9 @@ Approaches:
   2. Join order: Control the order workers join the cluster
 
 Example:
-  $0 10.0.1.100 staging
+  $0 staging
 
-Note: SSH access to the controller is required.
+Note: Tailscale connectivity to k0s-controller-<environment> is required.
 EOF
 }
 
@@ -45,12 +44,13 @@ error() {
 
 # Function to get current node CIDR assignments
 get_current_assignments() {
-    local controller_ip="$1"
+    local environment="$1"
+    local controller_hostname="k0s-controller-$environment"
     
-    log "Getting current pod CIDR assignments..."
+    log "Getting current pod CIDR assignments from $controller_hostname..."
     
-    ssh -o StrictHostKeyChecking=no "opc@$controller_ip" \
-        "k0s kubectl get nodes -o json | jq -r '.items[] | {
+    ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" \
+        "/usr/local/bin/k0s kubectl get nodes -o json | jq -r '.items[] | {
             name: .metadata.name,
             pod_cidr: (.metadata.annotations[\"kube-router.io/pod-cidr\"] // \"none\"),
             ready: (.status.conditions[] | select(.type == \"Ready\") | .status)
@@ -59,8 +59,8 @@ get_current_assignments() {
 
 # Function to manually assign pod CIDRs
 assign_pod_cidrs() {
-    local controller_ip="$1"
-    local environment="$2"
+    local environment="$1"
+    local controller_hostname="k0s-controller-$environment"
     
     log "Manually assigning pod CIDRs based on worker numbers..."
     
@@ -74,8 +74,8 @@ assign_pod_cidrs() {
     
     # Get current nodes
     local nodes
-    nodes=$(ssh -o StrictHostKeyChecking=no "opc@$controller_ip" \
-        "k0s kubectl get nodes --no-headers | awk '{print \$1}'" | grep -E "worker-[0-9]+-$environment" || true)
+    nodes=$(ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" \
+        "/usr/local/bin/k0s kubectl get nodes --no-headers | awk '{print \$1}'" | grep -E "worker-[0-9]+-$environment" || true)
     
     if [ -z "$nodes" ]; then
         error "No worker nodes found for environment: $environment"
@@ -89,8 +89,8 @@ assign_pod_cidrs() {
             log "Assigning CIDR $cidr to node $node"
             
             # Annotate the node with the desired pod CIDR
-            ssh -o StrictHostKeyChecking=no "opc@$controller_ip" \
-                "k0s kubectl annotate node '$node' 'kube-router.io/pod-cidr=$cidr' --overwrite"
+            ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" \
+                "/usr/local/bin/k0s kubectl annotate node '$node' 'kube-router.io/pod-cidr=$cidr' --overwrite"
             
             # Force kube-router to pick up the new annotation
             log "Restarting kube-router on $node to apply new CIDR..."
@@ -105,8 +105,8 @@ assign_pod_cidrs() {
 
 # Function to control join order
 control_join_order() {
-    local controller_ip="$1"
-    local environment="$2"
+    local environment="$1"
+    local controller_hostname="k0s-controller-$environment"
     
     log "Setting up controlled join order for consistent CIDR assignment..."
     
@@ -128,8 +128,8 @@ EOF
 
     # Generate join commands for each worker
     local worker_token
-    worker_token=$(ssh -o StrictHostKeyChecking=no "opc@$controller_ip" \
-        "k0s token create --role=worker --expiry=48h" 2>/dev/null || echo "ERROR: Could not generate token")
+    worker_token=$(ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" \
+        "/usr/local/bin/k0s token create --role=worker --expiry=48h" 2>/dev/null || echo "ERROR: Could not generate token")
     
     if [[ "$worker_token" == "ERROR:"* ]]; then
         error "Could not generate worker token"
@@ -142,9 +142,9 @@ EOF
         echo "ssh opc@k0s-worker-$i-$environment \"echo '$worker_token' | k0s install worker --token-file /dev/stdin\""
         echo "ssh opc@k0s-worker-$i-$environment \"systemctl enable k0sworker && systemctl start k0sworker\""
         echo "# Wait and verify:"
-        echo "ssh opc@$controller_ip \"k0s kubectl get nodes -o wide\""
+        echo "ssh opc@$controller_hostname \"/usr/local/bin/k0s kubectl get nodes -o wide\""
         echo "# Verify CIDR assignment:"
-        echo "ssh opc@$controller_ip \"k0s kubectl get node k0s-worker-$i-$environment -o jsonpath='{.metadata.annotations.kube-router\.io/pod-cidr}'\""
+        echo "ssh opc@$controller_hostname \"/usr/local/bin/k0s kubectl get node k0s-worker-$i-$environment -o jsonpath='{.metadata.annotations.kube-router\.io/pod-cidr}'\""
         if [ $i -lt 4 ]; then
             echo "# Wait for CIDR assignment before proceeding to next worker"
             echo "sleep 30"
@@ -154,22 +154,23 @@ EOF
 
 # Function to show current status
 show_status() {
-    local controller_ip="$1"
+    local environment="$1"
+    local controller_hostname="k0s-controller-$environment"
     
     log "Current cluster pod CIDR status:"
     echo ""
     
     # Show nodes and their CIDRs
-    ssh -o StrictHostKeyChecking=no "opc@$controller_ip" \
-        "k0s kubectl get nodes -o custom-columns=NAME:.metadata.name,READY:.status.conditions[?\(@.type==\"Ready\"\)].status,POD-CIDR:.metadata.annotations.kube-router\\.io/pod-cidr" 2>/dev/null || {
+    ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" \
+        "/usr/local/bin/k0s kubectl get nodes -o custom-columns=NAME:.metadata.name,READY:.status.conditions[?\(@.type==\"Ready\"\)].status,POD-CIDR:.metadata.annotations.kube-router\\.io/pod-cidr" 2>/dev/null || {
         error "Could not retrieve node status"
         return 1
     }
     
     echo ""
     log "Pod CIDR assignments:"
-    ssh -o StrictHostKeyChecking=no "opc@$controller_ip" \
-        "k0s kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}: {.metadata.annotations.kube-router\.io/pod-cidr}{\"\\n\"}{end}'" 2>/dev/null || {
+    ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" \
+        "/usr/local/bin/k0s kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}: {.metadata.annotations.kube-router\.io/pod-cidr}{\"\\n\"}{end}'" 2>/dev/null || {
         error "Could not retrieve CIDR assignments"
         return 1
     }
@@ -178,21 +179,21 @@ show_status() {
 # Main function
 main() {
     # Check arguments
-    if [ $# -lt 2 ]; then
+    if [ $# -lt 1 ]; then
         usage
         exit 1
     fi
     
-    local controller_ip="$1"
-    local environment="$2"
+    local environment="$1"
+    local command="${2:-show-status}"
     
     log "🚀 Pod CIDR Configuration for k0s cluster"
-    log "Controller IP: $controller_ip"
     log "Environment: $environment"
+    log "Controller: k0s-controller-$environment (via Tailscale)"
     echo ""
     
     # Show current status
-    show_status "$controller_ip"
+    show_status "$environment"
     echo ""
     
     # Provide options
@@ -209,29 +210,29 @@ Choose an approach based on your current cluster state:
 - If rebuilding cluster: Use join-order for predictable assignments
 
 Example usage:
-  $0 $controller_ip $environment show-status
-  $0 $controller_ip $environment assign-cidrs
-  $0 $controller_ip $environment join-order
+  $0 $environment show-status
+  $0 $environment assign-cidrs
+  $0 $environment join-order
 EOF
 }
 
 # Handle subcommands
-if [ $# -ge 3 ]; then
-    case "$3" in
+if [ $# -ge 2 ]; then
+    case "$2" in
         "show-status")
             show_status "$1"
             ;;
         "assign-cidrs")
-            assign_pod_cidrs "$1" "$2"
+            assign_pod_cidrs "$1"
             ;;
         "join-order")
-            control_join_order "$1" "$2"
+            control_join_order "$1"
             ;;
         "help")
             usage
             ;;
         *)
-            error "Unknown command: $3"
+            error "Unknown command: $2"
             usage
             exit 1
             ;;

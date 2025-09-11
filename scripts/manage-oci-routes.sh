@@ -213,10 +213,24 @@ get_pod_cidrs() {
     
     # Test basic connectivity first
     log "Testing connectivity to $controller_hostname..."
-    if ! ping -c 1 -W 5 "$controller_hostname" >/dev/null 2>&1; then
+    log "Running: ping -c 3 -W 10 $controller_hostname"
+    
+    ping_output=$(ping -c 3 -W 10 "$controller_hostname" 2>&1)
+    ping_exit=$?
+    
+    log "Ping exit code: $ping_exit"
+    log "Ping output: $ping_output"
+    
+    if [ $ping_exit -ne 0 ]; then
         error "Cannot ping $controller_hostname - Tailscale connectivity issue"
         log "Checking Tailscale status..."
-        sudo tailscale status | head -10 || true
+        tailscale_status=$(sudo tailscale status 2>&1)
+        log "Tailscale status: $tailscale_status"
+        
+        log "Checking if hostname resolves..."
+        resolve_test=$(nslookup "$controller_hostname" 2>&1 || echo "DNS resolution failed")
+        log "DNS resolution: $resolve_test"
+        
         return 1
     fi
     log "✅ Ping to $controller_hostname successful"
