@@ -215,33 +215,53 @@ get_pod_cidrs() {
     log "Testing connectivity to $controller_hostname..."
     if ! ping -c 1 -W 5 "$controller_hostname" >/dev/null 2>&1; then
         error "Cannot ping $controller_hostname - Tailscale connectivity issue"
+        log "Checking Tailscale status..."
+        sudo tailscale status | head -10 || true
         return 1
     fi
     log "✅ Ping to $controller_hostname successful"
     
     # Test SSH connectivity
     log "Testing SSH connectivity to $controller_hostname..."
-    if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes "opc@$controller_hostname" "echo 'SSH test successful'" >/dev/null 2>&1; then
-        error "SSH connection to $controller_hostname failed"
-        error "Debugging SSH connection..."
-        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -v "opc@$controller_hostname" "echo 'SSH test'" 2>&1 | head -10 || true
+    ssh_test_output=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes "opc@$controller_hostname" "echo 'SSH test successful'" 2>&1)
+    ssh_test_exit=$?
+    
+    if [ $ssh_test_exit -ne 0 ]; then
+        error "SSH connection to $controller_hostname failed (exit code: $ssh_test_exit)"
+        error "SSH test output: $ssh_test_output"
+        log "Debugging SSH connection with verbose output..."
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -v "opc@$controller_hostname" "echo 'SSH test'" 2>&1 | head -15 || true
         return 1
     fi
     log "✅ SSH connectivity to $controller_hostname successful"
+    log "SSH test output: $ssh_test_output"
     
     # Test k0s availability with retries (cluster might still be starting)
     log "Testing k0s kubectl availability on $controller_hostname..."
     local k0s_ready=false
     for attempt in {1..12}; do
         log "Attempt $attempt/12: Testing k0s kubectl..."
-        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "opc@$controller_hostname" "/usr/local/bin/k0s kubectl version" >/dev/null 2>&1; then
+        
+        k0s_test_output=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "opc@$controller_hostname" "/usr/local/bin/k0s kubectl version" 2>&1)
+        k0s_test_exit=$?
+        
+        log "k0s kubectl test exit code: $k0s_test_exit"
+        log "k0s kubectl test output: $k0s_test_output"
+        
+        if [ $k0s_test_exit -eq 0 ]; then
             k0s_ready=true
             log "✅ k0s kubectl is available on $controller_hostname"
             break
         else
-            if [ $attempt -eq 1 ]; then
-                log "k0s kubectl not ready yet, checking status..."
-                ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" "sudo systemctl status k0scontroller --no-pager -l" 2>&1 | head -10 || true
+            log "k0s kubectl test failed with exit code $k0s_test_exit"
+            if [ $attempt -eq 1 ] || [ $attempt -eq 6 ] || [ $attempt -eq 12 ]; then
+                log "Checking k0s controller status (attempt $attempt)..."
+                controller_status=$(ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" "sudo systemctl status k0scontroller --no-pager -l" 2>&1)
+                log "Controller status: $controller_status"
+                
+                log "Checking if k0s binary exists..."
+                binary_check=$(ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" "ls -la /usr/local/bin/k0s" 2>&1)
+                log "Binary check: $binary_check"
             fi
             if [ $attempt -lt 12 ]; then
                 log "k0s not ready yet, waiting 10 seconds before retry $((attempt + 1))/12..."
@@ -436,10 +456,32 @@ main() {
         configure)
             # Get private IPs and pod CIDR assignments
             # Controller connection uses Tailscale hostname, no IP discovery needed
+            log "Starting route configuration process..."
+            log "Getting private IPs from OCI subnet: $subnet_id"
+            
             local private_ips pod_cidrs matched_nodes
             private_ips=$(get_private_ips "$subnet_id" "$environment")
+            if [ $? -ne 0 ]; then
+                error "Failed to get private IPs from OCI"
+                exit 1
+            fi
+            log "Retrieved private IPs: $private_ips"
+            
+            log "Getting pod CIDR assignments from k0s controller..."
             pod_cidrs=$(get_pod_cidrs "$environment")
+            if [ $? -ne 0 ]; then
+                error "Failed to get pod CIDR assignments from k0s controller"
+                exit 1
+            fi
+            log "Retrieved pod CIDRs: $pod_cidrs"
+            
+            log "Matching nodes between OCI and k0s..."
             matched_nodes=$(match_nodes "$private_ips" "$pod_cidrs")
+            if [ $? -ne 0 ]; then
+                error "Failed to match nodes between OCI and k0s"
+                exit 1
+            fi
+            log "Matched nodes: $matched_nodes"
             
             # Configure the route table
             configure_route_table "$route_table_id" "$nat_gateway_id" "$service_gateway_id" "$matched_nodes"
