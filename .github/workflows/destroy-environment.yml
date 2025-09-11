@@ -36,7 +36,18 @@ jobs:
     with:
       environment: ${{ github.event.inputs.environment }}
       action: 'destroy'
-    secrets: inherit
+    secrets:
+      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+      OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+      OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+      OCI_PRIVATE_SUBNET: ${{ secrets.OCI_PRIVATE_SUBNET }}
+      OCI_ROUTE_TABLE_STAGING: ${{ secrets.OCI_ROUTE_TABLE_STAGING }}
+      OCI_ROUTE_TABLE_PRODUCTION: ${{ secrets.OCI_ROUTE_TABLE_PRODUCTION }}
+      OCI_NAT_GATEWAY: ${{ secrets.OCI_NAT_GATEWAY }}
+      OCI_SERVICE_GATEWAY: ${{ secrets.OCI_SERVICE_GATEWAY }}
 
   # Stage 2: Destroy all infrastructure resources
   # This tears down the complete environment after routes have been cleaned up
