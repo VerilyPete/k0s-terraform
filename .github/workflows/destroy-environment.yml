@@ -29,9 +29,21 @@ env:
   # These environment variables are no longer needed - using terraform.tfvars instead
 
 jobs:
+  # Stage 1: Reset route table before destroying infrastructure
+  # This ensures pod network routes are cleaned up before tearing down the cluster
+  reset-routes:
+    uses: ./.github/workflows/manage-oci-routes.yml
+    with:
+      environment: ${{ github.event.inputs.environment }}
+      action: 'destroy'
+    secrets: inherit
+
+  # Stage 2: Destroy all infrastructure resources
+  # This tears down the complete environment after routes have been cleaned up
   destroy:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
+    needs: reset-routes
 
     steps:
       - name: Validate destroy confirmation
@@ -102,12 +114,6 @@ jobs:
           
           # ssh_private_key removed - no longer using provisioners
 
-      - name: Reset route table before destroy
-        uses: ./.github/workflows/manage-oci-routes.yml
-        with:
-          environment: ${{ github.event.inputs.environment }}
-          action: 'destroy'
-          secrets: inherit
 
       - name: Clean up Tailscale entries before destroy
         run: |
