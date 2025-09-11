@@ -231,15 +231,35 @@ get_pod_cidrs() {
     fi
     log "✅ SSH connectivity to $controller_hostname successful"
     
-    # Test k0s availability
+    # Test k0s availability with retries (cluster might still be starting)
     log "Testing k0s kubectl availability on $controller_hostname..."
-    if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "opc@$controller_hostname" "k0s kubectl version" >/dev/null 2>&1; then
-        error "k0s kubectl not available or not working on $controller_hostname"
-        log "Checking k0s status..."
+    local k0s_ready=false
+    for attempt in {1..12}; do
+        log "Attempt $attempt/12: Testing k0s kubectl..."
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "opc@$controller_hostname" "k0s kubectl version" >/dev/null 2>&1; then
+            k0s_ready=true
+            log "✅ k0s kubectl is available on $controller_hostname"
+            break
+        else
+            if [ $attempt -eq 1 ]; then
+                log "k0s kubectl not ready yet, checking status..."
+                ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" "sudo systemctl status k0scontroller --no-pager -l" 2>&1 | head -10 || true
+            fi
+            if [ $attempt -lt 12 ]; then
+                log "k0s not ready yet, waiting 10 seconds before retry $((attempt + 1))/12..."
+                sleep 10
+            fi
+        fi
+    done
+    
+    if [ "$k0s_ready" = false ]; then
+        error "k0s kubectl not available after 2 minutes of waiting on $controller_hostname"
+        log "Final k0s controller status check..."
         ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" "sudo systemctl status k0scontroller --no-pager -l" 2>&1 | head -20 || true
+        log "Checking if k0s process is running..."
+        ssh -o StrictHostKeyChecking=no "opc@$controller_hostname" "ps aux | grep k0s | grep -v grep" 2>&1 || true
         return 1
     fi
-    log "✅ k0s kubectl is available on $controller_hostname"
     
     # Try to get node information via SSH using Tailscale hostname
     local node_info
